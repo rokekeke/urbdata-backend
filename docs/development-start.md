@@ -4,6 +4,8 @@
 
 O diretorio recebido estava vazio. Portanto, ainda nao existe arquitetura, contrato de API, modelo SQLAlchemy ou migration a preservar. A estrutura criada segue o backlog do motor e adota um monolito modular: transporte HTTP, casos de uso, dominio geoespacial, indicadores e persistencia permanecem separados.
 
+Em 2026-07-16, a estrutura foi confrontada com o documento `Estrutura Recomendada Backend URBDATA v1.0`. Foram adicionados os modulos faltantes, ambiente Docker/PostGIS, Alembic e integracao continua. Endpoints e tabelas de dominio permanecem deliberadamente sem implementacao ate a aprovacao dos contratos.
+
 Os quatro documentos convergem em cinco pontos: rastreabilidade integral; preservacao do dado original; calculos metricos em CRS projetado; formulas versionadas; e validacao com casos sinteticos e casos de ouro. A prioridade correta e uma fatia vertical de area territorial antes de lotes, redes viarias, densidade ou relatorios.
 
 Ha uma divergencia de execucao: a diretriz geral de backend recomenda fila para operacoes pesadas, mas o backlog exige analise sincrona no MVP. A decisao inicial esta registrada no ADR 004.

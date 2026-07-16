@@ -7,12 +7,20 @@ from app.domain.analysis.result import IndicatorCalculation
 
 
 def _calculator() -> IndicatorCalculation:
-    return IndicatorCalculation("test.value", "test", "1.0.0", 1.0, "count")
+    return IndicatorCalculation(
+        indicator_code="test.value",
+        theme="test",
+        formula_version="1.0.0",
+        raw_value=1.0,
+        unit="count",
+    )
 
 
 def test_registry_rejects_duplicate_codes() -> None:
     registry = IndicatorRegistry()
-    definition = IndicatorDefinition("test.value", "test", "1.0.0", "count", (), (), (), _calculator)
+    definition = IndicatorDefinition(
+        "test.value", "test", "1.0.0", "count", (), (), (), _calculator
+    )
     registry.register(definition)
 
     with pytest.raises(IndicatorDependencyError):

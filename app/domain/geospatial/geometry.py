@@ -17,5 +17,7 @@ def area_m2(geometry: BaseGeometry, *, crs: str | int) -> float:
 def length_m(geometry: BaseGeometry, *, crs: str | int) -> float:
     require_metric_crs(crs)
     if geometry.is_empty or not geometry.is_valid:
-        raise InvalidGeometryError("A valid, non-empty geometry is required for length calculation.")
+        raise InvalidGeometryError(
+            "A valid, non-empty geometry is required for length calculation."
+        )
     return float(geometry.length)

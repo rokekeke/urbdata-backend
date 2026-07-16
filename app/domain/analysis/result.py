@@ -9,11 +9,13 @@ IndicatorValue = float | int | str | dict[str, Any] | None
 
 @dataclass(frozen=True, slots=True)
 class IndicatorCalculation:
-    code: str
+    indicator_code: str
     theme: str
     formula_version: str
-    value: IndicatorValue
+    raw_value: IndicatorValue
     unit: str
+    metric_crs: str | None = None
+    source_layers: tuple[str, ...] = field(default_factory=tuple)
     contributing_feature_ids: tuple[UUID, ...] = field(default_factory=tuple)
     parameters: dict[str, Any] = field(default_factory=dict)
     warnings: tuple[AnalysisWarning, ...] = field(default_factory=tuple)

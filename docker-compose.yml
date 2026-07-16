@@ -1,0 +1,29 @@
+services:
+  db:
+    image: postgis/postgis:16-3.5
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-urbdata}
+      POSTGRES_USER: ${POSTGRES_USER:-urbdata}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-urbdata}
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  api:
+    build: .
+    environment:
+      URBDATA_DATABASE_URL: postgresql+psycopg://urbdata:urbdata@db:5432/urbdata
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

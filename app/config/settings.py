@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     environment: str = "local"
     api_v1_prefix: str = "/v1"
     database_url: str = "postgresql+psycopg://urbdata:urbdata@localhost:5432/urbdata"
+    max_upload_size_mb: int = 5
+    storage_path: str = "./tmp/uploads"
 
 
 class IndicatorDefaults(BaseSettings):
@@ -18,6 +20,8 @@ class IndicatorDefaults(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="URBDATA_INDICATOR_", extra="ignore")
 
+    # Canonical equivalent of the approved WGS_1984_UTM_Zone_22S WKT.
+    default_metric_crs: str = "EPSG:32722"
     road_snapping_tolerance_m: float = Field(default=2.0, gt=0)
     lot_frontage_tolerance_m: float = Field(default=3.0, gt=0)
     average_household_size: float = Field(default=2.5, gt=0)

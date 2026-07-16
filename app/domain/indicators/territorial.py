@@ -13,11 +13,13 @@ def calculate_total_area(
     contributing_feature_ids: tuple[UUID, ...] = (),
 ) -> IndicatorCalculation:
     return IndicatorCalculation(
-        code="territorial.total_area",
+        indicator_code="territorial.total_area",
         theme="territorial",
         formula_version="1.0.0",
-        value=area_m2(geometry, crs=metric_crs),
+        raw_value=area_m2(geometry, crs=metric_crs),
         unit="m2",
+        metric_crs=str(metric_crs),
+        source_layers=("perimeter",),
         contributing_feature_ids=contributing_feature_ids,
         parameters={"metric_crs": str(metric_crs)},
     )
