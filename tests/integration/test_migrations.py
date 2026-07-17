@@ -35,7 +35,7 @@ def test_fresh_and_stamped_legacy_database_converge_to_head() -> None:
     with engine.connect() as connection:
         assert (
             connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-            == "0005"
+            == "0006"
         )
     columns = {column["name"] for column in inspect(engine).get_columns("indicator_results")}
     assert {"formula_version", "metric_crs", "parameters", "source_layers", "warnings"} <= columns
@@ -47,6 +47,7 @@ def test_fresh_and_stamped_legacy_database_converge_to_head() -> None:
         "reference_area_m2",
         "quadra_id",
         "road_status",
+        "ca_max",
     } <= feature_columns
 
     command.downgrade(config, "0001")
@@ -54,5 +55,5 @@ def test_fresh_and_stamped_legacy_database_converge_to_head() -> None:
     with engine.connect() as connection:
         assert (
             connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-            == "0005"
+            == "0006"
         )

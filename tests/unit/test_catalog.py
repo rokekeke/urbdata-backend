@@ -33,3 +33,14 @@ def test_registry_has_the_road_network_indicators_registered() -> None:
     }
     assert all("sistema_viario" in definition.required_layers for definition in definitions)
     assert all("desconexoes_viarias" in definition.optional_layers for definition in definitions)
+
+
+def test_registry_has_the_minimum_density_indicators_registered() -> None:
+    definitions = build_registry().by_theme("density")
+
+    assert {definition.code for definition in definitions} == {
+        "density.max_computable_area",
+        "density.lot_count_with_ca",
+        "density.ca_coverage",
+    }
+    assert all(definition.required_layers == ("territorio",) for definition in definitions)

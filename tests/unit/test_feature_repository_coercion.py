@@ -3,6 +3,7 @@ from decimal import Decimal
 from app.infrastructure.database.repositories.feature_repository import (
     _coerce_bool,
     _coerce_decimal,
+    _coerce_nonnegative_decimal,
 )
 
 
@@ -44,3 +45,13 @@ class TestCoerceDecimal:
         assert _coerce_decimal(None) is None
         assert _coerce_decimal("nao-e-um-numero") is None
         assert _coerce_decimal("") is None
+
+
+class TestCoerceNonnegativeDecimal:
+    def test_accepts_zero_and_positive_values(self) -> None:
+        assert _coerce_nonnegative_decimal(0) == Decimal("0")
+        assert _coerce_nonnegative_decimal("3.42") == Decimal("3.42")
+
+    def test_rejects_negative_and_invalid_values(self) -> None:
+        assert _coerce_nonnegative_decimal(-0.1) is None
+        assert _coerce_nonnegative_decimal("invalido") is None

@@ -8,6 +8,14 @@ from functools import lru_cache
 
 from app.domain.analysis.definitions import IndicatorDefinition
 from app.domain.analysis.registry import IndicatorRegistry
+from app.domain.indicators.density import (
+    TERRITORIO_LAYER as DENSITY_TERRITORIO_LAYER,
+)
+from app.domain.indicators.density import (
+    calculate_ca_coverage_from_context,
+    calculate_lot_count_with_ca_from_context,
+    calculate_max_computable_area_from_context,
+)
 from app.domain.indicators.green_areas import (
     TERRITORIO_LAYER as GREEN_AREAS_TERRITORIO_LAYER,
 )
@@ -301,6 +309,39 @@ ROAD_PROPOSED_CONNECTION_COUNT = IndicatorDefinition(
     calculator=calculate_proposed_connection_count_from_context,
 )
 
+DENSITY_MAX_COMPUTABLE_AREA = IndicatorDefinition(
+    code="density.max_computable_area",
+    theme="density",
+    formula_version="1.0.0",
+    unit="m2",
+    required_layers=(DENSITY_TERRITORIO_LAYER,),
+    optional_layers=(),
+    dependencies=(),
+    calculator=calculate_max_computable_area_from_context,
+)
+
+DENSITY_LOT_COUNT_WITH_CA = IndicatorDefinition(
+    code="density.lot_count_with_ca",
+    theme="density",
+    formula_version="1.0.0",
+    unit="count",
+    required_layers=(DENSITY_TERRITORIO_LAYER,),
+    optional_layers=(),
+    dependencies=(),
+    calculator=calculate_lot_count_with_ca_from_context,
+)
+
+DENSITY_CA_COVERAGE = IndicatorDefinition(
+    code="density.ca_coverage",
+    theme="density",
+    formula_version="1.0.0",
+    unit="ratio",
+    required_layers=(DENSITY_TERRITORIO_LAYER,),
+    optional_layers=(),
+    dependencies=(),
+    calculator=calculate_ca_coverage_from_context,
+)
+
 ALL_DEFINITIONS: tuple[IndicatorDefinition, ...] = (
     TOTAL_AREA,
     PERIMETER,
@@ -324,6 +365,9 @@ ALL_DEFINITIONS: tuple[IndicatorDefinition, ...] = (
     ROAD_INTERSECTION_DENSITY,
     ROAD_LINK_NODE_RATIO,
     ROAD_PROPOSED_CONNECTION_COUNT,
+    DENSITY_MAX_COMPUTABLE_AREA,
+    DENSITY_LOT_COUNT_WITH_CA,
+    DENSITY_CA_COVERAGE,
 )
 
 

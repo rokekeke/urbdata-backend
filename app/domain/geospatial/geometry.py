@@ -94,15 +94,12 @@ def resolve_feature_area(
     crs: str | int,
     divergence_threshold: float = AREA_DIVERGENCE_THRESHOLD,
 ) -> ResolvedArea:
-    """Pick the area to use for one feature (Obsidian note 11).
+    """Resolve the authoritative geometric area for one feature.
 
-    The geometric area is always computed, for traceability and as the
-    fallback when no reference is supplied. When *reference_area_m2* is
-    present, it is the value actually used (it is assumed pre-verified
-    outside the platform); the geometric area only serves as a check
-    against it. A relative divergence at or above *divergence_threshold*
-    produces a warning - below that, small digitizing/rounding differences
-    are expected and not reported.
+    The imported geometry is always the calculation source. An optional
+    *reference_area_m2* is used only to check the source geometry. A relative
+    divergence at or above *divergence_threshold* produces a warning; the
+    reference never silently replaces the geometric measurement.
 
     A NaN *reference_area_m2* (as a pandas/GeoDataFrame column commonly
     represents a missing float rather than `None`) is treated the same as
@@ -127,4 +124,4 @@ def resolve_feature_area(
             feature_ids=(feature_id,),
             severity=WarningSeverity.WARNING,
         )
-    return ResolvedArea(area_m2=reference_area_m2, warning=warning)
+    return ResolvedArea(area_m2=geometric, warning=warning)

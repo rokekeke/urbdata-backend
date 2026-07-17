@@ -61,6 +61,9 @@ class Feature(Base):
     # Explicit origin of a road-centerline feature. Kept nullable so legacy
     # uploads are not guessed as existing or proposed.
     road_status: Mapped[str | None] = mapped_column(String, index=True)
+    # Maximum floor-area ratio (coeficiente de aproveitamento) mapped from
+    # the lot source data. Zero is valid; missing remains null.
+    ca_max: Mapped[Decimal | None] = mapped_column(Numeric)
     parent_quadra_feature_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("features.id")
     )

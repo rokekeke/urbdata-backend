@@ -53,6 +53,13 @@ def _coerce_decimal(value: Any) -> Decimal | None:
         return None
 
 
+def _coerce_nonnegative_decimal(value: Any) -> Decimal | None:
+    parsed = _coerce_decimal(value)
+    if parsed is None or parsed < 0:
+        return None
+    return parsed
+
+
 def _coerce_grouping_key(value: Any) -> str | None:
     """Normalize a raw attribute value into a grouping key (`quadra_id`):
     `None`/empty stays `None`, everything else becomes a stripped string."""
@@ -152,6 +159,8 @@ class FeatureRepository:
             if "road_status" in mapped:
                 resolved_status = resolve_road_status(mapped["road_status"])
                 feature.road_status = resolved_status.value if resolved_status is not None else None
+            if "ca_max" in mapped:
+                feature.ca_max = _coerce_nonnegative_decimal(mapped["ca_max"])
 
         layer = self.get_layer(layer_id)
         if layer is not None:
@@ -339,7 +348,7 @@ class FeatureRepository:
         positional index and never `external_id` (ADR 005).
 
         Always includes `macroarea`/`parcelavel`/`land_use`/`quadra_id`/
-        `reference_area_m2`/`road_status` as columns (ADR 008, ADR 009), even for layer
+        `reference_area_m2`/`road_status`/`ca_max` as columns (ADR 008, ADR 009), even for layer
         types that don't use them - they are simply `None` there. This lets
         a calculator filter and group a single `TERRITORIO` layer's
         GeoDataFrame (e.g. `gdf[gdf["macroarea"] == "lote"]`, or dissolve it
@@ -355,6 +364,7 @@ class FeatureRepository:
                 "land_use": [row.land_use for row in rows],
                 "quadra_id": [row.quadra_id for row in rows],
                 "road_status": [row.road_status for row in rows],
+                "ca_max": [float(row.ca_max) if row.ca_max is not None else None for row in rows],
                 "reference_area_m2": [
                     float(row.reference_area_m2) if row.reference_area_m2 is not None else None
                     for row in rows
