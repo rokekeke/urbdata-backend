@@ -19,6 +19,7 @@ _STATUS_BY_ERROR_CODE: dict[str, int] = {
     "project_not_found": 404,
     "project_version_not_found": 404,
     "invalid_selection": 422,
+    "duplicate_layer": 422,
 }
 
 

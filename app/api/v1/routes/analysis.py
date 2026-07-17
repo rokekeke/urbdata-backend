@@ -23,6 +23,7 @@ _STATUS_BY_ERROR_CODE: dict[str, int] = {
     "project_not_found": 404,
     "project_version_not_found": 404,
     "required_layer_missing": 422,
+    "duplicate_layer": 422,
     "invalid_geometry": 422,
     "metric_crs_selection_failed": 422,
     "indicator_calculation_failed": 422,

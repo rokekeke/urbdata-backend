@@ -41,3 +41,7 @@ class IndicatorDependencyError(AnalysisError):
 
 class InvalidSelectionError(AnalysisError):
     code = "invalid_selection"
+
+
+class DuplicateLayerError(AnalysisError):
+    code = "duplicate_layer"

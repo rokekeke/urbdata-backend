@@ -11,7 +11,7 @@ from shapely.geometry import shape as shapely_shape
 from sqlalchemy import cast, func
 from sqlalchemy.orm import Session, aliased
 
-from app.domain.geospatial.layers import LoadedFeatureLayer
+from app.domain.geospatial.layers import LoadedFeatureLayer, resolve_single_layer_id
 from app.domain.geospatial.spatial_relations import SpatialRelation
 from app.infrastructure.database.models.feature import Feature
 from app.infrastructure.database.models.layer import LayerStatus, LayerType, ProjectLayer
@@ -110,19 +110,24 @@ class FeatureRepository:
 
         Returns `None` when the version has no such layer, so callers can
         raise a domain-level `RequiredLayerMissingError` instead of a bare
-        `AttributeError`. Duplicate layers of the same type are not yet
-        disambiguated (BT-011 is still open); the first match wins.
+        `AttributeError`. Raises `DuplicateLayerError` (BT-011) when more
+        than one layer of the same type exists - it is never silently
+        resolved by picking one.
         """
-        layer = (
+        candidates = (
             self._session.query(ProjectLayer)
             .filter(
                 ProjectLayer.project_version_id == project_version_id,
                 ProjectLayer.layer_type == LayerType(layer_type),
             )
-            .first()
+            .all()
         )
-        if layer is None:
+        resolved_id = resolve_single_layer_id(
+            [candidate.id for candidate in candidates], layer_type=layer_type
+        )
+        if resolved_id is None:
             return None
+        layer = next(candidate for candidate in candidates if candidate.id == resolved_id)
         return self.load_layer(layer.id, layer_type=layer.layer_type.value)
 
     def select_related_feature_ids(
@@ -142,20 +147,24 @@ class FeatureRepository:
 
         A project with no layer of *target_layer_type* yet is a valid "no
         matches" state, not an error: this returns an empty tuple rather
-        than raising.
+        than raising. More than one layer of *target_layer_type* still
+        raises `DuplicateLayerError` (BT-011) - same rule as `load_layer_by_type`.
         """
-        target_layer = (
+        target_candidates = (
             self._session.query(ProjectLayer)
             .filter(
                 ProjectLayer.project_version_id == project_version_id,
                 ProjectLayer.layer_type == LayerType(target_layer_type),
             )
-            .first()
+            .all()
         )
-        if target_layer is None:
+        target_layer_id = resolve_single_layer_id(
+            [candidate.id for candidate in target_candidates], layer_type=target_layer_type
+        )
+        if target_layer_id is None:
             return ()
 
-        query = self._session.query(Feature.id).filter(Feature.layer_id == target_layer.id)
+        query = self._session.query(Feature.id).filter(Feature.layer_id == target_layer_id)
 
         if relation is not None and source_feature_ids:
             source = aliased(Feature)
