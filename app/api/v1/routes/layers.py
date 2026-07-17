@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.api.v1.schemas.layer import LayerAttributeMappingIn, LayerAttributesOut, LayerOut
 from app.domain.analysis.exceptions import ProjectNotFoundError
+from app.domain.text_encoding import fix_geojson_feature_properties
 from app.infrastructure.database.models.layer import LayerType
 from app.infrastructure.database.repositories.feature_repository import FeatureRepository
 from app.infrastructure.database.repositories.project_repository import ProjectRepository
@@ -58,6 +59,15 @@ def upload_layer(
             status_code=400,
             detail={"error": "empty_layer", "message": "O arquivo nao contem feicoes."},
         )
+
+    # Some exporters double-encode UTF-8 (see docs/adr or Obsidian note 10).
+    # This is a deterministic byte round-trip, not a domain judgment call,
+    # so it is safe to correct automatically - unlike geometry, properties
+    # are never silently altered otherwise.
+    for feature in features:
+        properties = feature.get("properties")
+        if isinstance(properties, dict):
+            feature["properties"] = fix_geojson_feature_properties(properties)
 
     geometry_type = features[0]["geometry"]["type"]
     if geometry_type not in EXPECTED_GEOMETRY[layer_type]:
