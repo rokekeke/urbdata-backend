@@ -8,6 +8,7 @@ from app.api.v1.routes.analysis import router as analysis_router
 from app.api.v1.routes.layers import router as layers_router
 from app.api.v1.routes.projects import router as projects_router
 from app.api.v1.routes.results import router as results_router
+from app.api.v1.routes.selection import router as selection_router
 from app.config.settings import get_settings
 
 
@@ -38,6 +39,7 @@ def create_app() -> FastAPI:
     application.include_router(layers_router, prefix=settings.api_v1_prefix)
     application.include_router(analysis_router, prefix=settings.api_v1_prefix)
     application.include_router(results_router, prefix=settings.api_v1_prefix)
+    application.include_router(selection_router, prefix=settings.api_v1_prefix)
 
     @application.get("/health", tags=["operations"])
     def health() -> dict[str, str]:

@@ -37,3 +37,7 @@ class IndicatorCalculationError(AnalysisError):
 
 class IndicatorDependencyError(AnalysisError):
     code = "indicator_dependency_failed"
+
+
+class InvalidSelectionError(AnalysisError):
+    code = "invalid_selection"

@@ -1,16 +1,33 @@
 """Bulk PostGIS layer and feature loading adapter."""
 
 import uuid
+from collections.abc import Callable
 from typing import Any
 
 import geopandas as gpd
+from geoalchemy2 import Geography
 from geoalchemy2.shape import from_shape, to_shape
 from shapely.geometry import shape as shapely_shape
-from sqlalchemy.orm import Session
+from sqlalchemy import cast, func
+from sqlalchemy.orm import Session, aliased
 
 from app.domain.geospatial.layers import LoadedFeatureLayer
+from app.domain.geospatial.spatial_relations import SpatialRelation
 from app.infrastructure.database.models.feature import Feature
 from app.infrastructure.database.models.layer import LayerStatus, LayerType, ProjectLayer
+
+# Topological relations (intersects/contains/within) compare geometries as
+# stored (SRID 4326); they don't depend on projection. DWITHIN is metric, so
+# both sides are cast to `geography` to get a meter-based distance without
+# picking a metric CRS per request (ADR 007).
+_SPATIAL_PREDICATES: dict[SpatialRelation, Callable[[Any, Any, float | None], Any]] = {
+    SpatialRelation.INTERSECTS: lambda a, b, _distance: func.ST_Intersects(a, b),
+    SpatialRelation.CONTAINS: lambda a, b, _distance: func.ST_Contains(a, b),
+    SpatialRelation.WITHIN: lambda a, b, _distance: func.ST_Within(a, b),
+    SpatialRelation.DWITHIN: lambda a, b, distance: func.ST_DWithin(
+        cast(a, Geography), cast(b, Geography), distance
+    ),
+}
 
 
 class FeatureRepository:
@@ -107,6 +124,59 @@ class FeatureRepository:
         if layer is None:
             return None
         return self.load_layer(layer.id, layer_type=layer.layer_type.value)
+
+    def select_related_feature_ids(
+        self,
+        *,
+        project_version_id: uuid.UUID,
+        target_layer_type: str,
+        relation: SpatialRelation | None,
+        source_feature_ids: tuple[uuid.UUID, ...] | None,
+        distance_m: float | None,
+        attribute_filters: dict[str, str] | None,
+    ) -> tuple[uuid.UUID, ...]:
+        """Answer "which features of *target_layer_type* satisfy *relation*
+        against *source_feature_ids* (and/or the attribute filters)?" using
+        PostGIS directly, over the spatial index on `features.geom`, for the
+        sub-second interactive selection endpoint (ADR 007).
+
+        A project with no layer of *target_layer_type* yet is a valid "no
+        matches" state, not an error: this returns an empty tuple rather
+        than raising.
+        """
+        target_layer = (
+            self._session.query(ProjectLayer)
+            .filter(
+                ProjectLayer.project_version_id == project_version_id,
+                ProjectLayer.layer_type == LayerType(target_layer_type),
+            )
+            .first()
+        )
+        if target_layer is None:
+            return ()
+
+        query = self._session.query(Feature.id).filter(Feature.layer_id == target_layer.id)
+
+        if relation is not None and source_feature_ids:
+            source = aliased(Feature)
+            predicate = _SPATIAL_PREDICATES[relation](Feature.geom, source.geom, distance_m)
+            query = query.filter(
+                self._session.query(source.id)
+                .filter(
+                    source.project_version_id == project_version_id,
+                    source.id.in_(source_feature_ids),
+                    predicate,
+                )
+                .exists()
+            )
+
+        for key, value in (attribute_filters or {}).items():
+            if key == "land_use":
+                query = query.filter(Feature.land_use == value)
+            else:
+                query = query.filter(Feature.mapped_properties[key].astext == value)
+
+        return tuple(row[0] for row in query.all())
 
     def load_layer(self, layer_id: uuid.UUID, *, layer_type: str) -> LoadedFeatureLayer:
         """Bulk-load a layer as a GeoDataFrame for the analysis engine.
