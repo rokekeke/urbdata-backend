@@ -43,6 +43,9 @@ def analyze_project(
         results=IndicatorRepository(db),
         registry=build_registry(),
         default_metric_crs=defaults.default_metric_crs,
+        indicator_parameters={
+            "road_snapping_tolerance_m": defaults.road_snapping_tolerance_m,
+        },
     )
     command = AnalyzeProjectCommand(project_id=project_id, themes=tuple(payload.themes))
     try:

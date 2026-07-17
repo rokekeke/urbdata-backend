@@ -13,6 +13,7 @@ from sqlalchemy import cast, func
 from sqlalchemy.orm import Session, aliased
 
 from app.config.macroarea_mapping import Macroarea, resolve_macroarea
+from app.config.road_hierarchy_mapping import resolve_road_status
 from app.domain.analysis.exceptions import RequiredLayerMissingError
 from app.domain.geospatial.geometry import dissolve_by_group
 from app.domain.geospatial.layers import (
@@ -148,6 +149,9 @@ class FeatureRepository:
                 feature.reference_area_m2 = _coerce_decimal(mapped["reference_area_m2"])
             if "quadra_id" in mapped:
                 feature.quadra_id = _coerce_grouping_key(mapped["quadra_id"])
+            if "road_status" in mapped:
+                resolved_status = resolve_road_status(mapped["road_status"])
+                feature.road_status = resolved_status.value if resolved_status is not None else None
 
         layer = self.get_layer(layer_id)
         if layer is not None:
@@ -335,7 +339,7 @@ class FeatureRepository:
         positional index and never `external_id` (ADR 005).
 
         Always includes `macroarea`/`parcelavel`/`land_use`/`quadra_id`/
-        `reference_area_m2` as columns (ADR 008, ADR 009), even for layer
+        `reference_area_m2`/`road_status` as columns (ADR 008, ADR 009), even for layer
         types that don't use them - they are simply `None` there. This lets
         a calculator filter and group a single `TERRITORIO` layer's
         GeoDataFrame (e.g. `gdf[gdf["macroarea"] == "lote"]`, or dissolve it
@@ -350,6 +354,7 @@ class FeatureRepository:
                 "parcelavel": [row.parcelavel for row in rows],
                 "land_use": [row.land_use for row in rows],
                 "quadra_id": [row.quadra_id for row in rows],
+                "road_status": [row.road_status for row in rows],
                 "reference_area_m2": [
                     float(row.reference_area_m2) if row.reference_area_m2 is not None else None
                     for row in rows

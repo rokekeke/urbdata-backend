@@ -23,9 +23,26 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     # PostgreSQL requires added enum values to be committed before they are
-    # used (same pattern as revision 0002's analysis_status reconciliation).
+    # used. Resolve the physical type because the stamped legacy database can
+    # use SQLAlchemy's old ``layertype`` name instead of ``layer_type``.
+    enum_reconciliation = """
+    DO $migration$
+    DECLARE layer_type_name text;
+    BEGIN
+        SELECT udt_name INTO layer_type_name
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'project_layers'
+          AND column_name = 'layer_type';
+        EXECUTE format(
+            'ALTER TYPE %I ADD VALUE IF NOT EXISTS ''territorio''',
+            layer_type_name
+        );
+    END
+    $migration$;
+    """
     with op.get_context().autocommit_block():
-        op.execute("ALTER TYPE layer_type ADD VALUE IF NOT EXISTS 'territorio'")
+        op.execute(enum_reconciliation)
 
     op.execute("ALTER TABLE features ADD COLUMN IF NOT EXISTS macroarea VARCHAR")
     op.execute("ALTER TABLE features ADD COLUMN IF NOT EXISTS parcelavel BOOLEAN")

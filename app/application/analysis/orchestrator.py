@@ -72,13 +72,19 @@ class SynchronousAnalysisOrchestrator:
     results: IndicatorResultStore
     registry: IndicatorRegistry
     default_metric_crs: str
+    indicator_parameters: dict[str, Any] | None = None
 
     def execute(self, command: AnalyzeProjectCommand) -> AnalysisRunOutcome:
         definitions = self._resolve_definitions(command.themes)
         version_id = self.project_versions.current_version_id(command.project_id)
+        effective_parameters = dict(self.indicator_parameters or {})
         run_id = self.runs.create_pending(
             version_id,
-            config={"themes": list(command.themes), "default_metric_crs": self.default_metric_crs},
+            config={
+                "themes": list(command.themes),
+                "default_metric_crs": self.default_metric_crs,
+                "indicator_parameters": effective_parameters,
+            },
         )
         self.runs.mark_running(run_id)
         started = time.monotonic()
@@ -114,6 +120,10 @@ class SynchronousAnalysisOrchestrator:
             {layer_type for definition in definitions for layer_type in definition.required_layers}
             | {PERIMETER_LAYER}
         )
+        optional_layer_types = sorted(
+            {layer_type for definition in definitions for layer_type in definition.optional_layers}
+            - set(required_layer_types)
+        )
         layers: dict[str, LoadedFeatureLayer] = {}
         for layer_type in required_layer_types:
             loaded = self.layers.load_layer_by_type(version_id, layer_type)
@@ -124,6 +134,11 @@ class SynchronousAnalysisOrchestrator:
                 )
             layers[layer_type] = loaded
 
+        for layer_type in optional_layer_types:
+            loaded = self.layers.load_layer_by_type(version_id, layer_type)
+            if loaded is not None:
+                layers[layer_type] = loaded
+
         perimeter_wgs84, _, _ = dissolve(layers[PERIMETER_LAYER].gdf)
         metric_crs = select_metric_crs(
             perimeter_wgs84,
@@ -131,7 +146,10 @@ class SynchronousAnalysisOrchestrator:
             default_crs=self.default_metric_crs,
         )
         return GeospatialContext(
-            project_version_id=version_id, metric_crs=metric_crs, layers=layers
+            project_version_id=version_id,
+            metric_crs=metric_crs,
+            layers=layers,
+            parameters=dict(self.indicator_parameters or {}),
         )
 
     def _fail(

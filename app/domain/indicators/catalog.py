@@ -33,6 +33,20 @@ from app.domain.indicators.quadras import (
     calculate_quadra_min_rotated_rectangle_from_context,
     calculate_quadra_stats_from_context,
 )
+from app.domain.indicators.roads import (
+    PERIMETER_LAYER as ROAD_PERIMETER_LAYER,
+)
+from app.domain.indicators.roads import (
+    ROAD_LAYER,
+    UNLINK_LAYER,
+    calculate_existing_length_from_context,
+    calculate_intersection_count_from_context,
+    calculate_intersection_density_from_context,
+    calculate_link_node_ratio_from_context,
+    calculate_proposed_connection_count_from_context,
+    calculate_proposed_length_from_context,
+    calculate_total_length_from_context,
+)
 from app.domain.indicators.territorial import (
     PERIMETER_LAYER,
     TERRITORIO_LAYER,
@@ -210,6 +224,83 @@ QUADRAS_FACE_LENGTH_SCORE = IndicatorDefinition(
     calculator=calculate_quadra_face_length_score_from_context,
 )
 
+ROAD_TOTAL_LENGTH = IndicatorDefinition(
+    code="road_network.total_length",
+    theme="road_network",
+    formula_version="1.0.0",
+    unit="m",
+    required_layers=(ROAD_LAYER,),
+    optional_layers=(UNLINK_LAYER,),
+    dependencies=(),
+    calculator=calculate_total_length_from_context,
+)
+
+ROAD_EXISTING_LENGTH = IndicatorDefinition(
+    code="road_network.existing_length",
+    theme="road_network",
+    formula_version="1.0.0",
+    unit="m",
+    required_layers=(ROAD_LAYER,),
+    optional_layers=(UNLINK_LAYER,),
+    dependencies=(),
+    calculator=calculate_existing_length_from_context,
+)
+
+ROAD_PROPOSED_LENGTH = IndicatorDefinition(
+    code="road_network.proposed_length",
+    theme="road_network",
+    formula_version="1.0.0",
+    unit="m",
+    required_layers=(ROAD_LAYER,),
+    optional_layers=(UNLINK_LAYER,),
+    dependencies=(),
+    calculator=calculate_proposed_length_from_context,
+)
+
+ROAD_INTERSECTION_COUNT = IndicatorDefinition(
+    code="road_network.intersection_count",
+    theme="road_network",
+    formula_version="1.0.0",
+    unit="count",
+    required_layers=(ROAD_LAYER,),
+    optional_layers=(UNLINK_LAYER,),
+    dependencies=(),
+    calculator=calculate_intersection_count_from_context,
+)
+
+ROAD_INTERSECTION_DENSITY = IndicatorDefinition(
+    code="road_network.intersection_density",
+    theme="road_network",
+    formula_version="1.0.0",
+    unit="count/km2",
+    required_layers=(ROAD_LAYER, ROAD_PERIMETER_LAYER),
+    optional_layers=(UNLINK_LAYER,),
+    dependencies=(),
+    calculator=calculate_intersection_density_from_context,
+)
+
+ROAD_LINK_NODE_RATIO = IndicatorDefinition(
+    code="road_network.link_node_ratio",
+    theme="road_network",
+    formula_version="1.0.0",
+    unit="adimensional",
+    required_layers=(ROAD_LAYER,),
+    optional_layers=(UNLINK_LAYER,),
+    dependencies=(),
+    calculator=calculate_link_node_ratio_from_context,
+)
+
+ROAD_PROPOSED_CONNECTION_COUNT = IndicatorDefinition(
+    code="road_network.proposed_connection_count",
+    theme="road_network",
+    formula_version="1.0.0",
+    unit="count",
+    required_layers=(ROAD_LAYER,),
+    optional_layers=(UNLINK_LAYER,),
+    dependencies=(),
+    calculator=calculate_proposed_connection_count_from_context,
+)
+
 ALL_DEFINITIONS: tuple[IndicatorDefinition, ...] = (
     TOTAL_AREA,
     PERIMETER,
@@ -226,6 +317,13 @@ ALL_DEFINITIONS: tuple[IndicatorDefinition, ...] = (
     QUADRAS_COMPACTNESS,
     QUADRAS_MIN_ROTATED_RECTANGLE,
     QUADRAS_FACE_LENGTH_SCORE,
+    ROAD_TOTAL_LENGTH,
+    ROAD_EXISTING_LENGTH,
+    ROAD_PROPOSED_LENGTH,
+    ROAD_INTERSECTION_COUNT,
+    ROAD_INTERSECTION_DENSITY,
+    ROAD_LINK_NODE_RATIO,
+    ROAD_PROPOSED_CONNECTION_COUNT,
 )
 
 

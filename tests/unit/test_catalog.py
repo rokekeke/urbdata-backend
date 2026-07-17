@@ -17,3 +17,19 @@ def test_registry_has_the_territorial_indicators_registered() -> None:
 
 def test_build_registry_is_cached() -> None:
     assert build_registry() is build_registry()
+
+
+def test_registry_has_the_road_network_indicators_registered() -> None:
+    definitions = build_registry().by_theme("road_network")
+
+    assert {definition.code for definition in definitions} == {
+        "road_network.total_length",
+        "road_network.existing_length",
+        "road_network.proposed_length",
+        "road_network.intersection_count",
+        "road_network.intersection_density",
+        "road_network.link_node_ratio",
+        "road_network.proposed_connection_count",
+    }
+    assert all("sistema_viario" in definition.required_layers for definition in definitions)
+    assert all("desconexoes_viarias" in definition.optional_layers for definition in definitions)

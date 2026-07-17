@@ -38,6 +38,7 @@ EXPECTED_GEOMETRY: dict[LayerType, set[str]] = {
     LayerType.AREAS_VERDES: {"Polygon", "MultiPolygon"},
     LayerType.EQUIPAMENTOS: {"Point", "Polygon", "MultiPolygon"},
     LayerType.EDIFICACOES: {"Polygon", "MultiPolygon"},
+    LayerType.DESCONEXOES_VIARIAS: {"Point", "MultiPoint"},
     # Single upload with every territorial subdivision, tagged per-feature
     # via the `macroarea` attribute (ADR 008) - the polygon footprint of
     # sistema_viario lives here too, distinct from the future LineString
@@ -83,8 +84,14 @@ def upload_layer(
         if isinstance(properties, dict):
             feature["properties"] = fix_geojson_feature_properties(properties)
 
-    geometry_type = features[0]["geometry"]["type"]
-    if geometry_type not in EXPECTED_GEOMETRY[layer_type]:
+    geometry_types = {
+        feature.get("geometry", {}).get("type")
+        if isinstance(feature.get("geometry"), dict)
+        else None
+        for feature in features
+    }
+    invalid_geometry_types = geometry_types - EXPECTED_GEOMETRY[layer_type]
+    if len(geometry_types) != 1 or invalid_geometry_types:
         raise HTTPException(
             status_code=400,
             detail={
@@ -92,9 +99,15 @@ def upload_layer(
                 "message": (
                     f"A camada '{layer_type.value}' espera "
                     f"{sorted(EXPECTED_GEOMETRY[layer_type])}, "
-                    f"mas o arquivo contem {geometry_type}."
+                    f"mas o arquivo contem {sorted(str(value) for value in geometry_types)}."
                 ),
             },
+        )
+    geometry_type = next(iter(geometry_types))
+    if not isinstance(geometry_type, str):
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "geometry_mismatch", "message": "Geometria ausente ou invalida."},
         )
 
     # Preserve the original upload unmodified before any parsing-derived data is

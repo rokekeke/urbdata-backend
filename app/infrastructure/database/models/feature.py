@@ -58,6 +58,9 @@ class Feature(Base):
     # quadra Feature is materialized from it, `parent_quadra_feature_id`
     # below is set to point at it (relation_method=ATTRIBUTE).
     quadra_id: Mapped[str | None] = mapped_column(String, index=True)
+    # Explicit origin of a road-centerline feature. Kept nullable so legacy
+    # uploads are not guessed as existing or proposed.
+    road_status: Mapped[str | None] = mapped_column(String, index=True)
     parent_quadra_feature_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("features.id")
     )

@@ -18,6 +18,9 @@ class LayerType(StrEnum):
     AREAS_VERDES = "areas_verdes"
     EQUIPAMENTOS = "equipamentos"
     EDIFICACOES = "edificacoes"
+    # Space-syntax unlink points: planar crossings that must not become
+    # graph connections (e.g. viaducts, tunnels and grade separations).
+    DESCONEXOES_VIARIAS = "desconexoes_viarias"
     # Single upload containing every territorial subdivision (lote, sistema
     # viario, avl, app, aci), tagged per-feature via the `macroarea`
     # attribute (ADR 008) - distinct from PERIMETRO, which stays the single

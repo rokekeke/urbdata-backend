@@ -1,6 +1,7 @@
 # URBDATA Backend
 
-Base inicial do monolito modular para o motor de indicadores urbanos.
+Monolito modular para upload de dados geoespaciais e calculo rastreavel de
+indicadores territoriais, de uso do solo, areas verdes, quadras e rede viaria.
 
 ## Inicio rapido
 
@@ -11,7 +12,21 @@ pytest
 uvicorn app.main:app --reload
 ```
 
-O primeiro marco funcional sera a fatia vertical `territorial.total_area`: carregar o perimetro, selecionar um CRS metrico, calcular a area, persistir o resultado e consulta-lo pela API.
+O motor seleciona um CRS metrico por projeto, executa os temas pelo catalogo de
+indicadores e registra formula, parametros, camadas, feicoes contribuintes e avisos.
+
+## Rede viaria
+
+- Envie os eixos como `sistema_viario` (`LineString`/`MultiLineString`).
+- Mapeie um atributo de origem para `road_status`; valores aceitos sao
+  `existente` e `proposta` (aliases comuns sao normalizados).
+- Opcionalmente, envie pontos `desconexoes_viarias` nos cruzamentos em planta
+  que nao sao conexoes reais, seguindo a semantica *unlink* da sintaxe espacial.
+- Execute o tema `road_network` em `POST /v1/projects/{id}/analyze`.
+
+O snapping e o noding ocorrem somente durante a analise. As geometrias enviadas
+e persistidas nunca sao alteradas. Consulte
+[ADR 010](docs/adr/010-road-network-topology.md).
 
 ## Regras invariantes
 
@@ -31,4 +46,5 @@ Consulte [docs/development-start.md](docs/development-start.md) para a analise i
 docker compose up --build
 ```
 
-A API fica em `http://localhost:8000` e o health check em `GET /health`. O schema ainda nao possui migrations de dominio: elas serao criadas depois da confirmacao do modelo relacional e do contrato da API.
+A API fica em `http://localhost:8000` e o health check em `GET /health`. O Alembic
+aplica o schema e suas evolucoes ate a revisao atual.

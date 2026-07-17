@@ -50,3 +50,21 @@ def test_metric_gdf_raises_for_a_layer_type_outside_the_context() -> None:
 
     with pytest.raises(RequiredLayerMissingError):
         context.metric_gdf("perimetro")
+
+
+def test_derived_object_is_built_only_once() -> None:
+    context = GeospatialContext(
+        project_version_id=uuid.uuid4(), metric_crs=CRS.from_epsg(32722), layers={}
+    )
+    calls = 0
+
+    def build() -> object:
+        nonlocal calls
+        calls += 1
+        return object()
+
+    first = context.cached("road_network", build)
+    second = context.cached("road_network", build)
+
+    assert first is second
+    assert calls == 1
