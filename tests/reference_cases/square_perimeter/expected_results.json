@@ -1,0 +1,23 @@
+{
+  "metric_crs_epsg": 32722,
+  "indicators": [
+    {
+      "indicator_code": "territorial.total_area",
+      "unit": "m2",
+      "value": 10000.0,
+      "tolerance_abs": 0.01
+    },
+    {
+      "indicator_code": "territorial.perimeter",
+      "unit": "m",
+      "value": 400.0,
+      "tolerance_abs": 0.01
+    },
+    {
+      "indicator_code": "territorial.compactness",
+      "unit": "adimensional",
+      "value": 0.7853981633974483,
+      "tolerance_abs": 1e-06
+    }
+  ]
+}

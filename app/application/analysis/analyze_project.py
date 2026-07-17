@@ -1,6 +1,7 @@
 from dataclasses import dataclass
-from typing import Protocol
 from uuid import UUID
+
+from app.application.analysis.orchestrator import AnalysisOrchestrator, AnalysisRunOutcome
 
 
 @dataclass(frozen=True, slots=True)
@@ -10,15 +11,11 @@ class AnalyzeProjectCommand:
     feature_ids: tuple[UUID, ...] | None = None
 
 
-class Orchestrator(Protocol):
-    def execute(self, command: AnalyzeProjectCommand) -> object: ...
-
-
 class AnalyzeProject:
     """Application boundary for the synchronous MVP analysis flow."""
 
-    def __init__(self, orchestrator: Orchestrator) -> None:
+    def __init__(self, orchestrator: AnalysisOrchestrator) -> None:
         self._orchestrator = orchestrator
 
-    def execute(self, command: AnalyzeProjectCommand) -> object:
+    def execute(self, command: AnalyzeProjectCommand) -> AnalysisRunOutcome:
         return self._orchestrator.execute(command)

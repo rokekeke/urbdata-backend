@@ -86,6 +86,28 @@ class FeatureRepository:
         self._session.commit()
         return len(features)
 
+    def load_layer_by_type(
+        self, project_version_id: uuid.UUID, layer_type: str
+    ) -> LoadedFeatureLayer | None:
+        """Resolve and bulk-load the layer of *layer_type* for one version.
+
+        Returns `None` when the version has no such layer, so callers can
+        raise a domain-level `RequiredLayerMissingError` instead of a bare
+        `AttributeError`. Duplicate layers of the same type are not yet
+        disambiguated (BT-011 is still open); the first match wins.
+        """
+        layer = (
+            self._session.query(ProjectLayer)
+            .filter(
+                ProjectLayer.project_version_id == project_version_id,
+                ProjectLayer.layer_type == LayerType(layer_type),
+            )
+            .first()
+        )
+        if layer is None:
+            return None
+        return self.load_layer(layer.id, layer_type=layer.layer_type.value)
+
     def load_layer(self, layer_id: uuid.UUID, *, layer_type: str) -> LoadedFeatureLayer:
         """Bulk-load a layer as a GeoDataFrame for the analysis engine.
 
