@@ -18,6 +18,11 @@ class LayerType(StrEnum):
     AREAS_VERDES = "areas_verdes"
     EQUIPAMENTOS = "equipamentos"
     EDIFICACOES = "edificacoes"
+    # Single upload containing every territorial subdivision (lote, sistema
+    # viario, avl, app, aci), tagged per-feature via the `macroarea`
+    # attribute (ADR 008) - distinct from PERIMETRO, which stays the single
+    # matricula boundary geometry.
+    TERRITORIO = "territorio"
 
 
 class LayerStatus(StrEnum):

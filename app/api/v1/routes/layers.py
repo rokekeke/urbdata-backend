@@ -7,8 +7,17 @@ from geoalchemy2.shape import to_shape
 from shapely.geometry import mapping
 from sqlalchemy.orm import Session
 
-from app.api.v1.schemas.layer import LayerAttributeMappingIn, LayerAttributesOut, LayerOut
-from app.domain.analysis.exceptions import ProjectNotFoundError
+from app.api.v1.schemas.layer import (
+    LayerAttributeMappingIn,
+    LayerAttributesOut,
+    LayerOut,
+    QuadrasDeriveOut,
+)
+from app.domain.analysis.exceptions import (
+    DuplicateLayerError,
+    ProjectNotFoundError,
+    RequiredLayerMissingError,
+)
 from app.domain.text_encoding import fix_geojson_feature_properties
 from app.infrastructure.database.models.layer import LayerType
 from app.infrastructure.database.repositories.feature_repository import FeatureRepository
@@ -29,6 +38,11 @@ EXPECTED_GEOMETRY: dict[LayerType, set[str]] = {
     LayerType.AREAS_VERDES: {"Polygon", "MultiPolygon"},
     LayerType.EQUIPAMENTOS: {"Point", "Polygon", "MultiPolygon"},
     LayerType.EDIFICACOES: {"Polygon", "MultiPolygon"},
+    # Single upload with every territorial subdivision, tagged per-feature
+    # via the `macroarea` attribute (ADR 008) - the polygon footprint of
+    # sistema_viario lives here too, distinct from the future LineString
+    # road-network axis under LayerType.SISTEMA_VIARIO.
+    LayerType.TERRITORIO: {"Polygon", "MultiPolygon"},
 }
 
 
@@ -143,6 +157,32 @@ def map_layer_attributes(
 ) -> dict[str, object]:
     updated = FeatureRepository(db).apply_attribute_mapping(layer_id, payload.mappings)
     return {"layer_id": str(layer_id), "status": "mapped", "features_updated": updated}
+
+
+@router.post("/quadras/derive", response_model=QuadrasDeriveOut)
+def derive_quadras_layer(project_id: uuid.UUID, db: Session = Depends(get_db)) -> object:
+    """Dissolve Lote features sharing a `quadra_id` into a QUADRAS layer
+    (ADR 009), toggleable/hideable like any other layer via the existing
+    GET /layers and GET /layers/{id}/geojson routes - no new read endpoints
+    needed. Replaces any previously derived QUADRAS layer for this version.
+    """
+    try:
+        version_id = ProjectRepository(db).current_version_id(project_id)
+    except ProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=exc.message) from exc
+
+    try:
+        result = FeatureRepository(db).derive_quadras_layer(version_id)
+    except RequiredLayerMissingError as exc:
+        raise HTTPException(
+            status_code=422, detail={"error": exc.code, "message": exc.message}
+        ) from exc
+    except DuplicateLayerError as exc:
+        raise HTTPException(
+            status_code=422, detail={"error": exc.code, "message": exc.message}
+        ) from exc
+
+    return result
 
 
 @router.get("/{layer_id}/geojson")

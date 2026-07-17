@@ -22,6 +22,16 @@ class LoadedFeatureLayer:
             raise ValueError("Loaded layers must have an explicit CRS.")
 
 
+@dataclass(frozen=True, slots=True)
+class DerivedQuadrasLayerResult:
+    """Outcome of dissolving Lote features by `quadra_id` and persisting
+    the result as a QUADRAS layer (ADR 009)."""
+
+    layer_id: UUID
+    quadra_count: int
+    lot_count: int
+
+
 def resolve_single_layer_id(layer_ids: Sequence[UUID], *, layer_type: str) -> UUID | None:
     """Resolve a project version's layer of *layer_type* to a single id
     (BT-011).

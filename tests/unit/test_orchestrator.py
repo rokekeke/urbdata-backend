@@ -70,6 +70,28 @@ def _perimeter_layer() -> LoadedFeatureLayer:
     )
 
 
+def _territorio_layer() -> LoadedFeatureLayer:
+    """One parcelavel Lote feature - enough to satisfy
+    territorial.area_by_category/percent_by_category (BT-043/044)."""
+    square = Polygon(
+        [(-52.0, -27.0), (-52.0, -26.9998), (-51.9998, -26.9998), (-51.9998, -27.0)]
+    )
+    gdf = GeoDataFrame(
+        {
+            "feature_id": [uuid.uuid4()],
+            "geometry": [square],
+            "macroarea": ["lote"],
+            "parcelavel": [True],
+            "land_use": ["residencial"],
+            "reference_area_m2": [None],
+        },
+        crs="EPSG:4326",
+    )
+    return LoadedFeatureLayer(
+        layer_id=uuid.uuid4(), layer_type="territorio", source_crs=CRS.from_epsg(4326), gdf=gdf
+    )
+
+
 def _orchestrator(
     layers: dict[str, LoadedFeatureLayer], runs: FakeRunStore, results: FakeResultStore
 ) -> SynchronousAnalysisOrchestrator:
@@ -85,7 +107,8 @@ def _orchestrator(
 
 def test_happy_path_completes_the_run_and_persists_the_result() -> None:
     runs, results = FakeRunStore(), FakeResultStore()
-    orchestrator = _orchestrator({"perimetro": _perimeter_layer()}, runs, results)
+    layers = {"perimetro": _perimeter_layer(), "territorio": _territorio_layer()}
+    orchestrator = _orchestrator(layers, runs, results)
     command = AnalyzeProjectCommand(project_id=PROJECT_ID, themes=("territorial",))
 
     outcome = orchestrator.execute(command)
@@ -99,9 +122,15 @@ def test_happy_path_completes_the_run_and_persists_the_result() -> None:
         "territorial.total_area",
         "territorial.perimeter",
         "territorial.compactness",
+        "territorial.area_by_category",
+        "territorial.percent_by_category",
     }
-    for result in by_code.values():
-        assert isinstance(result.raw_value, float) and result.raw_value > 0
+    for code in ("territorial.total_area", "territorial.perimeter", "territorial.compactness"):
+        raw_value = by_code[code].raw_value
+        assert isinstance(raw_value, float) and raw_value > 0
+    for code in ("territorial.area_by_category", "territorial.percent_by_category"):
+        raw_value = by_code[code].raw_value
+        assert isinstance(raw_value, dict) and raw_value.get("lote", 0) > 0
 
 
 def test_unknown_theme_marks_the_run_failed_and_reraises() -> None:

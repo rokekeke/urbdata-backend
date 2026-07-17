@@ -4,8 +4,9 @@ case/accent variation defensively even though source terms are meant to be
 pre-set/closed at export time (never free text).
 """
 
-import unicodedata
 from enum import StrEnum
+
+from app.domain.text_encoding import normalize_key
 
 
 class LandUseCategory(StrEnum):
@@ -22,14 +23,9 @@ class LandUseCategory(StrEnum):
 # use tag (see app/domain/indicators/land_use.py::classify_land_use).
 LAND_USE_DELIMITER = ";"
 
-
-def normalize_land_use_key(text: str) -> str:
-    """Lowercase and strip accents, so lookup is robust to export-tool case
-    or encoding quirks without having to enumerate every accented variant.
-    """
-    decomposed = unicodedata.normalize("NFKD", text.strip().lower())
-    return "".join(character for character in decomposed if not unicodedata.combining(character))
-
+# Re-exported under this name for call sites written before normalize_key
+# moved to app.domain.text_encoding (shared with app/config/macroarea_mapping.py).
+normalize_land_use_key = normalize_key
 
 LAND_USE_ALIASES: dict[str, LandUseCategory] = {
     normalize_land_use_key(category.value): category for category in LandUseCategory

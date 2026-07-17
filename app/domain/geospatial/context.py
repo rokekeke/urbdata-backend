@@ -34,3 +34,10 @@ class GeospatialContext:
         if layer_type not in self._metric_cache:
             self._metric_cache[layer_type] = layer.gdf.to_crs(self.metric_crs)
         return self._metric_cache[layer_type]
+
+    def metric_crs_value(self) -> str | int:
+        """The metric CRS as an EPSG code (or WKT string fallback), for
+        recording on an `IndicatorCalculation` - shared by every calculator
+        instead of each re-deriving it from `self.metric_crs`."""
+        epsg = self.metric_crs.to_epsg()
+        return epsg if epsg is not None else self.metric_crs.to_string()

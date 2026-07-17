@@ -7,7 +7,25 @@ call, so it is safe to apply automatically at upload validation (unlike
 geometry corrections, which are never automatic).
 """
 
+import unicodedata
 from typing import Any
+
+
+def normalize_key(text: str) -> str:
+    """Lowercase, strip accents/diacritics, and drop separators, for case-,
+    encoding- and formatting-tolerant lookups against a closed vocabulary.
+
+    Collapsing separators matters in practice: the same category shows up
+    in real exports as "sistema_viario" (slug) and "SISTEMA VIÁRIO"
+    (human-readable, from the `Comments` field) - both normalize to
+    "sistemaviario". Unrelated to `fix_mojibake` below: this is for
+    *comparing* text, not repairing corrupted bytes.
+    """
+    decomposed = unicodedata.normalize("NFKD", text.strip().lower())
+    without_accents = "".join(
+        character for character in decomposed if not unicodedata.combining(character)
+    )
+    return "".join(character for character in without_accents if character.isalnum())
 
 
 def fix_mojibake(value: str) -> str:

@@ -28,3 +28,11 @@ class LayerAttributesOut(BaseModel):
 
 class LayerAttributeMappingIn(BaseModel):
     mappings: dict[str, str | None]
+
+
+class QuadrasDeriveOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    layer_id: uuid.UUID
+    quadra_count: int
+    lot_count: int

@@ -10,6 +10,8 @@ def test_registry_has_the_territorial_indicators_registered() -> None:
         "territorial.total_area",
         "territorial.perimeter",
         "territorial.compactness",
+        "territorial.area_by_category",
+        "territorial.percent_by_category",
     }
 
 
