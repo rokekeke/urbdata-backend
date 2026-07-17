@@ -31,11 +31,15 @@ def _warning_from_json(payload: dict[str, Any]) -> AnalysisWarning:
 
 
 def _to_calculation(row: IndicatorResult) -> IndicatorCalculation:
+    raw_value = row.value_json
+    if raw_value is None and row.value is not None:
+        # Compatibility with results persisted before migration 0007.
+        raw_value = float(row.value)
     return IndicatorCalculation(
         indicator_code=row.indicator_code,
         theme=row.theme,
         formula_version=row.formula_version,
-        raw_value=float(row.value) if row.value is not None else None,
+        raw_value=raw_value,
         unit=row.unit or "",
         metric_crs=row.metric_crs,
         source_layers=tuple(row.source_layers),
@@ -61,6 +65,7 @@ class IndicatorRepository:
                     indicator_code=result.indicator_code,
                     formula_version=result.formula_version,
                     value=Decimal(str(raw_value)) if isinstance(raw_value, int | float) else None,
+                    value_json=raw_value,
                     unit=result.unit,
                     metric_crs=result.metric_crs,
                     parameters=result.parameters,

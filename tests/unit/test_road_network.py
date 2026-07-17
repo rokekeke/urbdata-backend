@@ -119,3 +119,16 @@ def test_external_intersections_remain_in_graph_but_can_be_excluded_from_density
 
     assert network.intersection_count == 2
     assert network.intersection_count_within(project_boundary) == 1
+
+
+def test_reprojected_crossing_is_noded_despite_floating_point_noise() -> None:
+    roads_wgs84 = _roads(
+        (LineString([(-52.0015, -27.0002), (-51.9985, -27.0002)]), "existente"),
+        (LineString([(-52.0, -27.0008), (-52.0, -26.9992)]), "proposta"),
+    ).set_crs("EPSG:4326", allow_override=True)
+    roads_metric = roads_wgs84.to_crs(METRIC_CRS)
+
+    network = build_road_network(roads_metric)
+
+    assert network.intersection_count == 1
+    assert network.proposed_connection_count == 1

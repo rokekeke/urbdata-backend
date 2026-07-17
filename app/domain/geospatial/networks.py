@@ -7,6 +7,7 @@ space-syntax unlink handling happen only in this per-analysis representation.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from itertools import pairwise
 from uuid import UUID
 
 import networkx as nx
@@ -19,7 +20,7 @@ from shapely.geometry import (
     Point,
 )
 from shapely.geometry.base import BaseGeometry
-from shapely.ops import nearest_points, split
+from shapely.ops import nearest_points, substring
 from shapely.strtree import STRtree
 
 from app.config.road_hierarchy_mapping import RoadStatus
@@ -332,27 +333,42 @@ def _noding_points(
                 pair = frozenset((left_index, right_index))
                 if _is_unlinked(pair, point, unlink_rules, tolerance_m):
                     continue
-                points_by_line[left_index].append(point)
-                points_by_line[right_index].append(point)
+                # GEOS intersections after CRS reprojection can be a few
+                # floating-point units off each input line. ``split`` requires
+                # exact point-on-line topology, so project the intersection
+                # back onto each source line independently before cutting.
+                points_by_line[left_index].append(
+                    left.geometry.interpolate(left.geometry.project(point))
+                )
+                points_by_line[right_index].append(
+                    right.geometry.interpolate(right.geometry.project(point))
+                )
     return points_by_line, warnings
 
 
 def _split_line(line: LineString, points: list[Point]) -> tuple[LineString, ...]:
-    unique_points = {_node_key(point): point for point in points}
-    interior = [
-        point
-        for point in unique_points.values()
-        if point.distance(Point(line.coords[0])) > 1e-7
-        and point.distance(Point(line.coords[-1])) > 1e-7
-    ]
-    if not interior:
+    # Splitting by linear reference is deliberately used instead of
+    # ``shapely.ops.split``. A point derived from intersecting reprojected
+    # lines can differ from the line by ~1e-10 m, which is enough for GEOS to
+    # reject it as an exact splitter even though it is topologically valid.
+    cut_distances: list[float] = []
+    for point in points:
+        distance = float(line.project(point))
+        if distance <= 1e-7 or distance >= line.length - 1e-7:
+            continue
+        if not any(abs(distance - known) <= 1e-7 for known in cut_distances):
+            cut_distances.append(distance)
+
+    if not cut_distances:
         return (line,)
-    pieces = split(line, MultiPoint(interior))
-    return tuple(
-        part
-        for part in pieces.geoms
-        if isinstance(part, LineString) and not part.is_empty and part.length > 1e-7
-    )
+
+    bounds = [0.0, *sorted(cut_distances), float(line.length)]
+    pieces: list[LineString] = []
+    for start, end in pairwise(bounds):
+        part = substring(line, start, end)
+        if isinstance(part, LineString) and not part.is_empty and part.length > 1e-7:
+            pieces.append(part)
+    return tuple(pieces)
 
 
 def _connectivity_warnings(graph: nx.MultiGraph[NodeKey]) -> list[AnalysisWarning]:

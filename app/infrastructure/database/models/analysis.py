@@ -53,6 +53,7 @@ class IndicatorResult(Base):
     indicator_code: Mapped[str] = mapped_column(String, nullable=False)
     formula_version: Mapped[str] = mapped_column(String, nullable=False)
     value: Mapped[Decimal | None] = mapped_column(Numeric)
+    value_json: Mapped[Any | None] = mapped_column(JSONB)
     unit: Mapped[str | None] = mapped_column(String)
     metric_crs: Mapped[str | None] = mapped_column(String)
     parameters: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)

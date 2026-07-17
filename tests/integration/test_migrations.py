@@ -35,10 +35,17 @@ def test_fresh_and_stamped_legacy_database_converge_to_head() -> None:
     with engine.connect() as connection:
         assert (
             connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-            == "0006"
+            == "0007"
         )
     columns = {column["name"] for column in inspect(engine).get_columns("indicator_results")}
-    assert {"formula_version", "metric_crs", "parameters", "source_layers", "warnings"} <= columns
+    assert {
+        "formula_version",
+        "metric_crs",
+        "parameters",
+        "source_layers",
+        "warnings",
+        "value_json",
+    } <= columns
     feature_columns = {column["name"] for column in inspect(engine).get_columns("features")}
     assert "external_id" in feature_columns
     assert {
@@ -55,5 +62,5 @@ def test_fresh_and_stamped_legacy_database_converge_to_head() -> None:
     with engine.connect() as connection:
         assert (
             connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-            == "0006"
+            == "0007"
         )
