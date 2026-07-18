@@ -46,7 +46,7 @@ def _min_rotated_rectangle_dimensions(geometry: BaseGeometry) -> tuple[float, fl
     return (max(edge_a, edge_b), min(edge_a, edge_b))
 
 
-def _quadras_from_context(
+def quadras_from_context(
     context: GeospatialContext,
 ) -> tuple[tuple[QuadraGeometry, ...], tuple[AnalysisWarning, ...]]:
     """Filter the TERRITORIO layer to Lote features and dissolve them by
@@ -122,7 +122,7 @@ def calculate_quadra_stats(
 
 def calculate_quadra_stats_from_context(context: GeospatialContext) -> IndicatorCalculation:
     """BT-050: `IndicatorDefinition.calculator` for `quadras.stats`."""
-    quadras, quadra_warnings = _quadras_from_context(context)
+    quadras, quadra_warnings = quadras_from_context(context)
     return calculate_quadra_stats(
         quadras, metric_crs=context.metric_crs_value(), warnings=quadra_warnings
     )
@@ -157,7 +157,7 @@ def calculate_quadra_compactness(
 
 def calculate_quadra_compactness_from_context(context: GeospatialContext) -> IndicatorCalculation:
     """BT-051: `IndicatorDefinition.calculator` for `quadras.compactness`."""
-    quadras, quadra_warnings = _quadras_from_context(context)
+    quadras, quadra_warnings = quadras_from_context(context)
     return calculate_quadra_compactness(
         quadras, metric_crs=context.metric_crs_value(), warnings=quadra_warnings
     )
@@ -195,7 +195,7 @@ def calculate_quadra_min_rotated_rectangle_from_context(
     context: GeospatialContext,
 ) -> IndicatorCalculation:
     """BT-052: `IndicatorDefinition.calculator` for `quadras.min_rotated_rectangle`."""
-    quadras, quadra_warnings = _quadras_from_context(context)
+    quadras, quadra_warnings = quadras_from_context(context)
     return calculate_quadra_min_rotated_rectangle(
         quadras, metric_crs=context.metric_crs_value(), warnings=quadra_warnings
     )
@@ -271,7 +271,7 @@ def calculate_quadra_face_length_score_from_context(
     context: GeospatialContext,
 ) -> IndicatorCalculation:
     """BT-053/054: `IndicatorDefinition.calculator` for `quadras.face_length_score`."""
-    quadras, quadra_warnings = _quadras_from_context(context)
+    quadras, quadra_warnings = quadras_from_context(context)
     return calculate_quadra_face_length_score(
         quadras, metric_crs=context.metric_crs_value(), warnings=quadra_warnings
     )

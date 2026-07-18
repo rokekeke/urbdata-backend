@@ -44,3 +44,13 @@ def test_registry_has_the_minimum_density_indicators_registered() -> None:
         "density.ca_coverage",
     }
     assert all(definition.required_layers == ("territorio",) for definition in definitions)
+
+
+def test_registry_has_the_lots_indicators_registered() -> None:
+    definitions = build_registry().by_theme("lots")
+
+    assert {definition.code for definition in definitions} == {
+        "lots.frontage_length",
+        "lots.parceling_efficiency",
+    }
+    assert all(definition.required_layers == ("territorio",) for definition in definitions)

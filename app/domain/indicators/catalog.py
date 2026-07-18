@@ -32,6 +32,13 @@ from app.domain.indicators.land_use import (
     calculate_percent_by_category_from_context,
     calculate_predominant_use_from_context,
 )
+from app.domain.indicators.lots import (
+    TERRITORIO_LAYER as LOTS_TERRITORIO_LAYER,
+)
+from app.domain.indicators.lots import (
+    calculate_lot_frontage_from_context,
+    calculate_parceling_efficiency_from_context,
+)
 from app.domain.indicators.quadras import (
     TERRITORIO_LAYER as QUADRAS_TERRITORIO_LAYER,
 )
@@ -342,6 +349,28 @@ DENSITY_CA_COVERAGE = IndicatorDefinition(
     calculator=calculate_ca_coverage_from_context,
 )
 
+LOTS_FRONTAGE_LENGTH = IndicatorDefinition(
+    code="lots.frontage_length",
+    theme="lots",
+    formula_version="1.0.0",
+    unit="m",
+    required_layers=(LOTS_TERRITORIO_LAYER,),
+    optional_layers=(),
+    dependencies=(),
+    calculator=calculate_lot_frontage_from_context,
+)
+
+LOTS_PARCELING_EFFICIENCY = IndicatorDefinition(
+    code="lots.parceling_efficiency",
+    theme="lots",
+    formula_version="1.0.0",
+    unit="ratio",
+    required_layers=(LOTS_TERRITORIO_LAYER,),
+    optional_layers=(),
+    dependencies=(),
+    calculator=calculate_parceling_efficiency_from_context,
+)
+
 ALL_DEFINITIONS: tuple[IndicatorDefinition, ...] = (
     TOTAL_AREA,
     PERIMETER,
@@ -368,6 +397,8 @@ ALL_DEFINITIONS: tuple[IndicatorDefinition, ...] = (
     DENSITY_MAX_COMPUTABLE_AREA,
     DENSITY_LOT_COUNT_WITH_CA,
     DENSITY_CA_COVERAGE,
+    LOTS_FRONTAGE_LENGTH,
+    LOTS_PARCELING_EFFICIENCY,
 )
 
 
