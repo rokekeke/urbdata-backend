@@ -188,11 +188,13 @@ def derive_quadras_layer(project_id: uuid.UUID, db: Session = Depends(get_db)) -
         result = FeatureRepository(db).derive_quadras_layer(version_id)
     except RequiredLayerMissingError as exc:
         raise HTTPException(
-            status_code=422, detail={"error": exc.code, "message": exc.message}
+            status_code=422,
+            detail={"error": exc.code, "message": exc.message, "context": exc.context},
         ) from exc
     except DuplicateLayerError as exc:
         raise HTTPException(
-            status_code=422, detail={"error": exc.code, "message": exc.message}
+            status_code=422,
+            detail={"error": exc.code, "message": exc.message, "context": exc.context},
         ) from exc
 
     return result

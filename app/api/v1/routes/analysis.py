@@ -52,8 +52,11 @@ def analyze_project(
         outcome = AnalyzeProject(orchestrator).execute(command)
     except AnalysisError as exc:
         status_code = _STATUS_BY_ERROR_CODE.get(exc.code, 500)
+        # exc.context carries the actionable detail (e.g. WHICH layer_type is
+        # missing) - without it the client only sees a generic message.
         raise HTTPException(
-            status_code=status_code, detail={"error": exc.code, "message": exc.message}
+            status_code=status_code,
+            detail={"error": exc.code, "message": exc.message, "context": exc.context},
         ) from exc
 
     return AnalyzeResponse(
