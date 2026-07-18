@@ -48,14 +48,17 @@ def _context() -> tuple[GeospatialContext, list[uuid.UUID]]:
     )
 
 
-def test_max_computable_area_uses_geometry_times_ca_and_ignores_non_lots() -> None:
+def test_max_computable_area_uses_resolved_area_times_ca_and_ignores_non_lots() -> None:
+    # Feature 0 has a valid reference_area_m2 (80.0) that diverges from its
+    # 100 m2 geometry by 25% - the project invariant says the reference wins
+    # when present (see geometry.py::resolve_feature_area), so the expected
+    # total is 80*2.0 + 100*0.0 = 160.0, not 100*2.0 + 100*0.0 = 200.0.
     context, feature_ids = _context()
 
     result = calculate_max_computable_area_from_context(context)
 
-    assert result.raw_value == pytest.approx(200.0)
+    assert result.raw_value == pytest.approx(160.0)
     assert set(result.contributing_feature_ids) == {feature_ids[0], feature_ids[2]}
-    assert result.parameters["area_source"] == "imported_geometry"
     assert {warning.code for warning in result.warnings} == {
         "area_reference_divergence",
         "lot_ca_missing",
@@ -70,10 +73,13 @@ def test_zero_ca_is_valid_and_missing_ca_is_not_counted() -> None:
     assert result.raw_value == 2
 
 
-def test_ca_coverage_is_weighted_by_geometric_lot_area() -> None:
+def test_ca_coverage_is_weighted_by_resolved_lot_area() -> None:
+    # Resolved areas: feature 0 = 80.0 (reference wins), feature 1 = 100.0
+    # (no reference, geometric fallback), feature 2 = 100.0 (reference,
+    # matches geometry). Covered (ca_max not None) = feature 0 + feature 2.
     context, _ = _context()
 
     result = calculate_ca_coverage_from_context(context)
 
-    assert result.raw_value == pytest.approx(2 / 3)
+    assert result.raw_value == pytest.approx((80.0 + 100.0) / (80.0 + 100.0 + 100.0))
     assert result.unit == "ratio"

@@ -94,12 +94,25 @@ def resolve_feature_area(
     crs: str | int,
     divergence_threshold: float = AREA_DIVERGENCE_THRESHOLD,
 ) -> ResolvedArea:
-    """Resolve the authoritative geometric area for one feature.
+    """Pick the area to use for one feature (Obsidian note 11).
 
-    The imported geometry is always the calculation source. An optional
-    *reference_area_m2* is used only to check the source geometry. A relative
-    divergence at or above *divergence_threshold* produces a warning; the
-    reference never silently replaces the geometric measurement.
+    INVARIANT - confirmed by the responsible urbanist, do not change without
+    a new ADR and explicit re-approval (see [[feedback_urbdata_persona]] and
+    Obsidian note 11): **when *reference_area_m2* is present and valid, it is
+    always the value used in the calculation instead of recalculating from
+    geometry.** The geometric area is still always computed, for
+    traceability and as the fallback when no reference is supplied, and is
+    compared against the reference: a relative divergence at or above
+    *divergence_threshold* produces a warning, but the geometric value never
+    silently overrides a present reference.
+
+    This rule was accidentally reversed once (17/07/2026, while building the
+    minimum lot-buildability slice) because a caller assumed "always
+    geometric" without checking this shared helper's existing contract -
+    reverted the same day. Every one of `resolve_feature_area`'s callers
+    (territorial, land_use, green_areas, density) must get the same
+    resolution policy; a caller needing different semantics must not repoint
+    or reinterpret this function - see the callers listed above.
 
     A NaN *reference_area_m2* (as a pandas/GeoDataFrame column commonly
     represents a missing float rather than `None`) is treated the same as
@@ -124,4 +137,4 @@ def resolve_feature_area(
             feature_ids=(feature_id,),
             severity=WarningSeverity.WARNING,
         )
-    return ResolvedArea(area_m2=geometric, warning=warning)
+    return ResolvedArea(area_m2=reference_area_m2, warning=warning)

@@ -133,9 +133,8 @@ def _result(
         source_layers=(TERRITORIO_LAYER,),
         contributing_feature_ids=tuple(record.feature_id for record in calculated),
         parameters={
-            "area_source": "imported_geometry",
             "area_reference_divergence_threshold": AREA_DIVERGENCE_THRESHOLD,
-            "formula": "lot_geometry_area_m2 * ca_max",
+            "formula": "lot_area_m2 * ca_max",
         },
         warnings=warnings,
     )
