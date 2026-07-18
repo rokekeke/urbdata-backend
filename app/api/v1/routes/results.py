@@ -3,6 +3,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.api.v1.errors import error_detail
 from app.api.v1.schemas.analysis import IndicatorResultOut, indicator_result_to_out
 from app.application.analysis.get_results import GetResults
 from app.domain.analysis.exceptions import ProjectNotFoundError
@@ -18,7 +19,9 @@ def get_results(project_id: uuid.UUID, db: Session = Depends(get_db)) -> list[In
     try:
         ProjectRepository(db).get(project_id)
     except ProjectNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=exc.message) from exc
+        raise HTTPException(
+            status_code=404, detail=error_detail(exc.code, exc.message, exc.context)
+        ) from exc
 
     results = GetResults(repository=IndicatorRepository(db)).execute(project_id)
     return [indicator_result_to_out(result) for result in results]

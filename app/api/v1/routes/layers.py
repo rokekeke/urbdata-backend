@@ -7,6 +7,7 @@ from geoalchemy2.shape import to_shape
 from shapely.geometry import mapping
 from sqlalchemy.orm import Session
 
+from app.api.v1.errors import error_detail
 from app.api.v1.schemas.layer import (
     LayerAttributeMappingIn,
     LayerAttributesOut,
@@ -57,7 +58,9 @@ def upload_layer(
     try:
         version_id = ProjectRepository(db).current_version_id(project_id)
     except ProjectNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=exc.message) from exc
+        raise HTTPException(
+            status_code=404, detail=error_detail(exc.code, exc.message, exc.context)
+        ) from exc
 
     raw = file.file.read()
     try:
@@ -65,14 +68,14 @@ def upload_layer(
     except json.JSONDecodeError as exc:
         raise HTTPException(
             status_code=400,
-            detail={"error": "invalid_geojson", "message": "Arquivo nao e um GeoJSON valido."},
+            detail=error_detail("invalid_geojson", "Arquivo nao e um GeoJSON valido."),
         ) from exc
 
     features: list[dict[str, Any]] = geojson.get("features", [])
     if not features:
         raise HTTPException(
             status_code=400,
-            detail={"error": "empty_layer", "message": "O arquivo nao contem feicoes."},
+            detail=error_detail("empty_layer", "O arquivo nao contem feicoes."),
         )
 
     # Some exporters double-encode UTF-8 (see docs/adr or Obsidian note 10).
@@ -94,20 +97,25 @@ def upload_layer(
     if len(geometry_types) != 1 or invalid_geometry_types:
         raise HTTPException(
             status_code=400,
-            detail={
-                "error": "geometry_mismatch",
-                "message": (
+            detail=error_detail(
+                "geometry_mismatch",
+                (
                     f"A camada '{layer_type.value}' espera "
                     f"{sorted(EXPECTED_GEOMETRY[layer_type])}, "
                     f"mas o arquivo contem {sorted(str(value) for value in geometry_types)}."
                 ),
-            },
+                {
+                    "layer_type": layer_type.value,
+                    "expected": sorted(EXPECTED_GEOMETRY[layer_type]),
+                    "received": sorted(str(value) for value in geometry_types),
+                },
+            ),
         )
     geometry_type = next(iter(geometry_types))
     if not isinstance(geometry_type, str):
         raise HTTPException(
             status_code=400,
-            detail={"error": "geometry_mismatch", "message": "Geometria ausente ou invalida."},
+            detail=error_detail("geometry_mismatch", "Geometria ausente ou invalida."),
         )
 
     # Preserve the original upload unmodified before any parsing-derived data is
@@ -132,7 +140,9 @@ def list_layers(project_id: uuid.UUID, db: Session = Depends(get_db)) -> object:
     try:
         version_id = ProjectRepository(db).current_version_id(project_id)
     except ProjectNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=exc.message) from exc
+        raise HTTPException(
+            status_code=404, detail=error_detail(exc.code, exc.message, exc.context)
+        ) from exc
     return FeatureRepository(db).list_layers(version_id)
 
 
@@ -142,7 +152,12 @@ def get_layer_attributes(
 ) -> LayerAttributesOut:
     sample = FeatureRepository(db).list_features(layer_id)[:20]
     if not sample:
-        raise HTTPException(status_code=404, detail="Camada sem feicoes.")
+        raise HTTPException(
+            status_code=404,
+            detail=error_detail(
+                "layer_empty", "Camada sem feicoes.", {"layer_id": str(layer_id)}
+            ),
+        )
 
     fields: set[str] = set()
     values: dict[str, list[str]] = {}
@@ -182,19 +197,19 @@ def derive_quadras_layer(project_id: uuid.UUID, db: Session = Depends(get_db)) -
     try:
         version_id = ProjectRepository(db).current_version_id(project_id)
     except ProjectNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=exc.message) from exc
+        raise HTTPException(
+            status_code=404, detail=error_detail(exc.code, exc.message, exc.context)
+        ) from exc
 
     try:
         result = FeatureRepository(db).derive_quadras_layer(version_id)
     except RequiredLayerMissingError as exc:
         raise HTTPException(
-            status_code=422,
-            detail={"error": exc.code, "message": exc.message, "context": exc.context},
+            status_code=422, detail=error_detail(exc.code, exc.message, exc.context)
         ) from exc
     except DuplicateLayerError as exc:
         raise HTTPException(
-            status_code=422,
-            detail={"error": exc.code, "message": exc.message, "context": exc.context},
+            status_code=422, detail=error_detail(exc.code, exc.message, exc.context)
         ) from exc
 
     return result

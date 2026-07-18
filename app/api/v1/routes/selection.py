@@ -3,6 +3,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.api.v1.errors import error_detail
 from app.api.v1.schemas.selection import SelectionRequest, SelectionResponse
 from app.application.selection.select_related_features import (
     SelectRelatedFeatures,
@@ -45,7 +46,7 @@ def select_related_features(
     except AnalysisError as exc:
         status_code = _STATUS_BY_ERROR_CODE.get(exc.code, 500)
         raise HTTPException(
-            status_code=status_code, detail={"error": exc.code, "message": exc.message}
+            status_code=status_code, detail=error_detail(exc.code, exc.message, exc.context)
         ) from exc
 
     return SelectionResponse(feature_ids=list(feature_ids), count=len(feature_ids))

@@ -3,6 +3,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.api.v1.errors import error_detail
 from app.api.v1.schemas.analysis import AnalyzeRequest, AnalyzeResponse, indicator_result_to_out
 from app.application.analysis.analyze_project import AnalyzeProject, AnalyzeProjectCommand
 from app.application.analysis.orchestrator import SynchronousAnalysisOrchestrator
@@ -55,8 +56,7 @@ def analyze_project(
         # exc.context carries the actionable detail (e.g. WHICH layer_type is
         # missing) - without it the client only sees a generic message.
         raise HTTPException(
-            status_code=status_code,
-            detail={"error": exc.code, "message": exc.message, "context": exc.context},
+            status_code=status_code, detail=error_detail(exc.code, exc.message, exc.context)
         ) from exc
 
     return AnalyzeResponse(
