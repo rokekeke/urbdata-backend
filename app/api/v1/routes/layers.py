@@ -8,8 +8,12 @@ from shapely.geometry import mapping
 from sqlalchemy.orm import Session
 
 from app.api.v1.errors import error_detail
+from app.api.v1.schemas.error import BAD_REQUEST, NOT_FOUND, TOO_LARGE, UNPROCESSABLE
 from app.api.v1.schemas.layer import (
+    GeoJSONFeatureCollectionOut,
+    GeoJSONFeatureOut,
     LayerAttributeMappingIn,
+    LayerAttributeMappingOut,
     LayerAttributesOut,
     LayerOut,
     QuadrasDeriveOut,
@@ -48,7 +52,12 @@ EXPECTED_GEOMETRY: dict[LayerType, set[str]] = {
 }
 
 
-@router.post("", response_model=LayerOut, status_code=201)
+@router.post(
+    "",
+    response_model=LayerOut,
+    status_code=201,
+    responses={**NOT_FOUND, **BAD_REQUEST, **TOO_LARGE},
+)
 def upload_layer(
     project_id: uuid.UUID,
     layer_type: LayerType = Form(...),
@@ -135,7 +144,7 @@ def upload_layer(
     return layer
 
 
-@router.get("", response_model=list[LayerOut])
+@router.get("", response_model=list[LayerOut], responses={**NOT_FOUND})
 def list_layers(project_id: uuid.UUID, db: Session = Depends(get_db)) -> object:
     try:
         version_id = ProjectRepository(db).current_version_id(project_id)
@@ -146,7 +155,9 @@ def list_layers(project_id: uuid.UUID, db: Session = Depends(get_db)) -> object:
     return FeatureRepository(db).list_layers(version_id)
 
 
-@router.get("/{layer_id}/attributes", response_model=LayerAttributesOut)
+@router.get(
+    "/{layer_id}/attributes", response_model=LayerAttributesOut, responses={**NOT_FOUND}
+)
 def get_layer_attributes(
     project_id: uuid.UUID, layer_id: uuid.UUID, db: Session = Depends(get_db)
 ) -> LayerAttributesOut:
@@ -176,18 +187,22 @@ def get_layer_attributes(
     )
 
 
-@router.patch("/{layer_id}/attributes")
+@router.patch("/{layer_id}/attributes", response_model=LayerAttributeMappingOut)
 def map_layer_attributes(
     project_id: uuid.UUID,
     layer_id: uuid.UUID,
     payload: LayerAttributeMappingIn,
     db: Session = Depends(get_db),
-) -> dict[str, object]:
+) -> LayerAttributeMappingOut:
     updated = FeatureRepository(db).apply_attribute_mapping(layer_id, payload.mappings)
-    return {"layer_id": str(layer_id), "status": "mapped", "features_updated": updated}
+    return LayerAttributeMappingOut(layer_id=layer_id, status="mapped", features_updated=updated)
 
 
-@router.post("/quadras/derive", response_model=QuadrasDeriveOut)
+@router.post(
+    "/quadras/derive",
+    response_model=QuadrasDeriveOut,
+    responses={**NOT_FOUND, **UNPROCESSABLE},
+)
 def derive_quadras_layer(project_id: uuid.UUID, db: Session = Depends(get_db)) -> object:
     """Dissolve Lote features sharing a `quadra_id` into a QUADRAS layer
     (ADR 009), toggleable/hideable like any other layer via the existing
@@ -215,23 +230,24 @@ def derive_quadras_layer(project_id: uuid.UUID, db: Session = Depends(get_db)) -
     return result
 
 
-@router.get("/{layer_id}/geojson")
+@router.get("/{layer_id}/geojson", response_model=GeoJSONFeatureCollectionOut)
 def get_layer_geojson(
     project_id: uuid.UUID, layer_id: uuid.UUID, db: Session = Depends(get_db)
-) -> dict[str, Any]:
+) -> GeoJSONFeatureCollectionOut:
+    """`feature.id` is the persisted feature UUID - the join key for
+    per-feature indicator values (`feature_key: feature_id` in the
+    catalog, ADR 014)."""
     features = FeatureRepository(db).list_features(layer_id)
-    return {
-        "type": "FeatureCollection",
-        "features": [
-            {
-                "type": "Feature",
-                "id": str(feature.id),
-                "geometry": mapping(to_shape(feature.geom)),
-                "properties": {
+    return GeoJSONFeatureCollectionOut(
+        features=[
+            GeoJSONFeatureOut(
+                id=str(feature.id),
+                geometry=dict(mapping(to_shape(feature.geom))),
+                properties={
                     **(feature.source_properties or {}),
                     **(feature.mapped_properties or {}),
                 },
-            }
+            )
             for feature in features
-        ],
-    }
+        ]
+    )

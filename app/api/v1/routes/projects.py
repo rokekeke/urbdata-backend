@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.v1.errors import error_detail
+from app.api.v1.schemas.error import NOT_FOUND
 from app.api.v1.schemas.project import ProjectCreate, ProjectOut, ProjectVersionOut
 from app.domain.analysis.exceptions import ProjectNotFoundError
 from app.infrastructure.database.repositories.project_repository import ProjectRepository
@@ -23,7 +24,7 @@ def list_projects(db: Session = Depends(get_db)) -> object:
     return ProjectRepository(db).list_all()
 
 
-@router.get("/{project_id}", response_model=ProjectOut)
+@router.get("/{project_id}", response_model=ProjectOut, responses={**NOT_FOUND})
 def get_project(project_id: uuid.UUID, db: Session = Depends(get_db)) -> object:
     try:
         return ProjectRepository(db).get(project_id)
@@ -33,7 +34,9 @@ def get_project(project_id: uuid.UUID, db: Session = Depends(get_db)) -> object:
         ) from exc
 
 
-@router.get("/{project_id}/versions", response_model=list[ProjectVersionOut])
+@router.get(
+    "/{project_id}/versions", response_model=list[ProjectVersionOut], responses={**NOT_FOUND}
+)
 def list_versions(project_id: uuid.UUID, db: Session = Depends(get_db)) -> object:
     """Newest-first; the first entry carries `is_current=True` - the same
     rule every other endpoint applies internally via `current_version_id`."""

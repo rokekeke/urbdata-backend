@@ -30,9 +30,27 @@ class LayerAttributeMappingIn(BaseModel):
     mappings: dict[str, str | None]
 
 
+class LayerAttributeMappingOut(BaseModel):
+    layer_id: uuid.UUID
+    status: str
+    features_updated: int
+
+
 class QuadrasDeriveOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     layer_id: uuid.UUID
     quadra_count: int
     lot_count: int
+
+
+class GeoJSONFeatureOut(BaseModel):
+    type: str = "Feature"
+    id: str
+    geometry: dict[str, object]
+    properties: dict[str, object]
+
+
+class GeoJSONFeatureCollectionOut(BaseModel):
+    type: str = "FeatureCollection"
+    features: list[GeoJSONFeatureOut]

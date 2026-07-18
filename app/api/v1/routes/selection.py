@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.v1.errors import error_detail
+from app.api.v1.schemas.error import NOT_FOUND, UNPROCESSABLE
 from app.api.v1.schemas.selection import SelectionRequest, SelectionResponse
 from app.application.selection.select_related_features import (
     SelectRelatedFeatures,
@@ -24,7 +25,11 @@ _STATUS_BY_ERROR_CODE: dict[str, int] = {
 }
 
 
-@router.post("/{project_id}/selection", response_model=SelectionResponse)
+@router.post(
+    "/{project_id}/selection",
+    response_model=SelectionResponse,
+    responses={**NOT_FOUND, **UNPROCESSABLE},
+)
 def select_related_features(
     project_id: uuid.UUID, payload: SelectionRequest, db: Session = Depends(get_db)
 ) -> SelectionResponse:

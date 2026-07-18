@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.v1.errors import error_detail
+from app.api.v1.schemas.error import NOT_FOUND
 from app.api.v1.schemas.run import AnalysisRunOut
 from app.domain.analysis.exceptions import ProjectNotFoundError, ProjectVersionNotFoundError
 from app.infrastructure.database.repositories.analysis_repository import AnalysisRepository
@@ -20,7 +21,7 @@ from app.infrastructure.database.session import get_db
 router = APIRouter(prefix="/projects", tags=["runs"])
 
 
-@router.get("/{project_id}/runs", response_model=list[AnalysisRunOut])
+@router.get("/{project_id}/runs", response_model=list[AnalysisRunOut], responses={**NOT_FOUND})
 def list_runs(project_id: uuid.UUID, db: Session = Depends(get_db)) -> object:
     try:
         version_id = ProjectRepository(db).current_version_id(project_id)
@@ -31,7 +32,9 @@ def list_runs(project_id: uuid.UUID, db: Session = Depends(get_db)) -> object:
     return AnalysisRepository(db).list_runs(version_id)
 
 
-@router.get("/{project_id}/runs/{run_id}", response_model=AnalysisRunOut)
+@router.get(
+    "/{project_id}/runs/{run_id}", response_model=AnalysisRunOut, responses={**NOT_FOUND}
+)
 def get_run(project_id: uuid.UUID, run_id: uuid.UUID, db: Session = Depends(get_db)) -> object:
     try:
         ProjectRepository(db).get(project_id)

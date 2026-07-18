@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.api.v1.errors import error_detail
 from app.api.v1.schemas.analysis import AnalyzeRequest, AnalyzeResponse, indicator_result_to_out
+from app.api.v1.schemas.error import NOT_FOUND, UNPROCESSABLE
 from app.application.analysis.analyze_project import AnalyzeProject, AnalyzeProjectCommand
 from app.application.analysis.orchestrator import SynchronousAnalysisOrchestrator
 from app.config.settings import get_indicator_defaults
@@ -32,7 +33,12 @@ _STATUS_BY_ERROR_CODE: dict[str, int] = {
 }
 
 
-@router.post("/{project_id}/analyze", response_model=AnalyzeResponse, status_code=201)
+@router.post(
+    "/{project_id}/analyze",
+    response_model=AnalyzeResponse,
+    status_code=201,
+    responses={**NOT_FOUND, **UNPROCESSABLE},
+)
 def analyze_project(
     project_id: uuid.UUID, payload: AnalyzeRequest, db: Session = Depends(get_db)
 ) -> AnalyzeResponse:
