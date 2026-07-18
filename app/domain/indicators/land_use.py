@@ -10,7 +10,6 @@ from app.config.land_use_mapping import (
     normalize_land_use_key,
 )
 from app.config.macroarea_mapping import Macroarea
-from app.domain.analysis.exceptions import IndicatorCalculationError
 from app.domain.analysis.result import IndicatorCalculation
 from app.domain.analysis.warnings import AnalysisWarning, WarningSeverity
 from app.domain.geospatial.context import GeospatialContext
@@ -69,6 +68,32 @@ def _contributing_ids(
     return tuple(feature_id for _, ids in breakdown.values() for feature_id in ids)
 
 
+def _unclassified_warning(lots: Sequence[LotAreaRecord]) -> AnalysisWarning | None:
+    """Per-feature INFO warning for lots whose land use didn't resolve to a
+    category (ADR 013 degradation policy - same shape as `lot_without_quadra`
+    and `lot_ca_missing`). `None` when every lot classified."""
+    unclassified = tuple(
+        lot.feature_id for lot in lots if classify_land_use(lot.raw_land_use) is None
+    )
+    if not unclassified:
+        return None
+    return AnalysisWarning(
+        code="lot_without_land_use",
+        message=(
+            "Lotes sem uso do solo reconhecido ficam fora dos indicadores de uso do solo."
+        ),
+        feature_ids=unclassified,
+        severity=WarningSeverity.INFO,
+    )
+
+
+def _with_unclassified(
+    warnings: tuple[AnalysisWarning, ...], lots: Sequence[LotAreaRecord]
+) -> tuple[AnalysisWarning, ...]:
+    warning = _unclassified_warning(lots)
+    return warnings if warning is None else (*warnings, warning)
+
+
 def _lot_records_from_context(
     context: GeospatialContext,
 ) -> tuple[tuple[LotAreaRecord, ...], tuple[AnalysisWarning, ...]]:
@@ -113,7 +138,7 @@ def calculate_area_by_category(
         source_layers=(LOTE_LAYER,),
         contributing_feature_ids=_contributing_ids(breakdown),
         parameters={"metric_crs": str(metric_crs)},
-        warnings=warnings,
+        warnings=_with_unclassified(warnings, lots),
     )
 
 
@@ -132,24 +157,29 @@ def calculate_percent_by_category(
     warnings: tuple[AnalysisWarning, ...] = (),
 ) -> IndicatorCalculation:
     """BT-063: percentage per category over the sum of classified lot area
-    only (domain decision, 2026-07-17 - other macroareas don't apply)."""
+    only (domain decision, 2026-07-17 - other macroareas don't apply).
+
+    Zero classified lot area is an empty qualifying universe, not a
+    structural failure: the result degrades to an empty breakdown with the
+    per-lot warning instead of failing the run (ADR 013)."""
     breakdown = _area_by_category(lots)
     total = sum(area for area, _ in breakdown.values())
-    if total <= 0:
-        raise IndicatorCalculationError(
-            "No classified lot area available to compute land-use percentages."
-        )
+    raw_value: dict[str, object] = (
+        {}
+        if total <= 0
+        else {category.value: area / total for category, (area, _) in breakdown.items()}
+    )
     return IndicatorCalculation(
         indicator_code="land_use.percent_by_category",
         theme="land_use",
-        formula_version="1.0.0",
-        raw_value={category.value: area / total for category, (area, _) in breakdown.items()},
+        formula_version="1.0.1",
+        raw_value=raw_value,
         unit="ratio",
         metric_crs=str(metric_crs),
         source_layers=(LOTE_LAYER,),
         contributing_feature_ids=_contributing_ids(breakdown),
         parameters={"metric_crs": str(metric_crs), "denominator": "classified_lot_area"},
-        warnings=warnings,
+        warnings=_with_unclassified(warnings, lots),
     )
 
 
@@ -170,20 +200,32 @@ def calculate_predominant_use(
     """BT-064: the category with the most classified area. An exact tie is
     reported as `None` with an info warning rather than an arbitrary pick -
     the per-lot Misto rule resolves lot-level ties, but a project-level tie
-    across categories is a distinct, honestly-reportable outcome."""
+    across categories is a distinct, honestly-reportable outcome.
+
+    An empty breakdown (no lot classified) degrades to `None` with the
+    per-lot warning instead of failing the run (ADR 013)."""
     breakdown = _area_by_category(lots)
+    all_warnings = _with_unclassified(warnings, lots)
     if not breakdown:
-        raise IndicatorCalculationError(
-            "No classified lot area available to determine the predominant land use."
+        return IndicatorCalculation(
+            indicator_code="land_use.predominant_use",
+            theme="land_use",
+            formula_version="1.0.1",
+            raw_value=None,
+            unit="categoria",
+            metric_crs=str(metric_crs),
+            source_layers=(LOTE_LAYER,),
+            contributing_feature_ids=(),
+            parameters={"metric_crs": str(metric_crs)},
+            warnings=all_warnings,
         )
     max_area = max(area for area, _ in breakdown.values())
     leaders = sorted(category for category, (area, _) in breakdown.items() if area == max_area)
     value: str | None = leaders[0].value
-    all_warnings = warnings
     if len(leaders) > 1:
         value = None
         all_warnings = (
-            *warnings,
+            *all_warnings,
             AnalysisWarning(
                 code="predominant_use_tie",
                 message=(
@@ -196,7 +238,7 @@ def calculate_predominant_use(
     return IndicatorCalculation(
         indicator_code="land_use.predominant_use",
         theme="land_use",
-        formula_version="1.0.0",
+        formula_version="1.0.1",
         raw_value=value,
         unit="categoria",
         metric_crs=str(metric_crs),
@@ -225,20 +267,21 @@ def calculate_diversity_shannon(
     (not lot count) - the standard basis in land-use-mix literature, since
     it weighs a large lot the same as its actual spatial/functional share
     rather than as "one unit" (domain choice, 2026-07-17, registered per
-    instruction rather than left implicit)."""
+    instruction rather than left implicit).
+
+    Zero classified lot area degrades to `None` with the per-lot warning
+    instead of failing the run (ADR 013)."""
     breakdown = _area_by_category(lots)
     total = sum(area for area, _ in breakdown.values())
-    if total <= 0:
-        raise IndicatorCalculationError(
-            "No classified lot area available to compute land-use diversity."
+    shannon: float | None = None
+    if total > 0:
+        shannon = -sum(
+            (area / total) * math.log(area / total) for area, _ in breakdown.values() if area > 0
         )
-    shannon = -sum(
-        (area / total) * math.log(area / total) for area, _ in breakdown.values() if area > 0
-    )
     return IndicatorCalculation(
         indicator_code="land_use.diversity_shannon",
         theme="land_use",
-        formula_version="1.0.0",
+        formula_version="1.0.1",
         raw_value=shannon,
         unit="adimensional",
         metric_crs=str(metric_crs),
@@ -249,7 +292,7 @@ def calculate_diversity_shannon(
             "formula": "-sum(pi*ln(pi))",
             "base": "area",
         },
-        warnings=warnings,
+        warnings=_with_unclassified(warnings, lots),
     )
 
 

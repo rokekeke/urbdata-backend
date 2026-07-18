@@ -6,7 +6,6 @@ from uuid import UUID
 from shapely.geometry.base import BaseGeometry
 
 from app.config.macroarea_mapping import Macroarea
-from app.domain.analysis.exceptions import IndicatorCalculationError
 from app.domain.analysis.result import IndicatorCalculation
 from app.domain.analysis.warnings import AnalysisWarning, WarningSeverity
 from app.domain.geospatial.context import GeospatialContext
@@ -272,25 +271,41 @@ def calculate_territorial_percent_by_category(
     category" - not 100% of the whole gleba (that reading is BT-043's raw
     area breakdown, or `green_areas.percent_of_project`'s gross-area
     convention, a deliberately different denominator for a different
-    question)."""
+    question).
+
+    Zero parcelavel area is an empty qualifying universe (e.g. a gleba that
+    is entirely APP), not a structural failure: the result degrades to an
+    empty breakdown with a WARNING instead of failing the run (ADR 013)."""
     parcelavel_records = [record for record in records if record.parcelavel is True]
     breakdown = _area_by_macroarea(parcelavel_records)
     total = sum(area for area, _ in breakdown.values())
-    if total <= 0:
-        raise IndicatorCalculationError(
-            "No area classified as parcelavel is available to compute territorial percentages."
+    raw_value: dict[str, object] = {}
+    all_warnings = warnings
+    if total > 0:
+        raw_value = {category.value: area / total for category, (area, _) in breakdown.items()}
+    else:
+        all_warnings = (
+            *warnings,
+            AnalysisWarning(
+                code="no_parcelavel_area",
+                message=(
+                    "Nenhuma area classificada como parcelavel; percentuais "
+                    "territoriais nao podem ser calculados."
+                ),
+                severity=WarningSeverity.WARNING,
+            ),
         )
     return IndicatorCalculation(
         indicator_code="territorial.percent_by_category",
         theme="territorial",
-        formula_version="1.0.0",
-        raw_value={category.value: area / total for category, (area, _) in breakdown.items()},
+        formula_version="1.0.1",
+        raw_value=raw_value,
         unit="ratio",
         metric_crs=str(metric_crs),
         source_layers=(TERRITORIO_LAYER,),
         contributing_feature_ids=_territorial_contributing_ids(breakdown),
         parameters={"metric_crs": str(metric_crs), "denominator": "parcelavel_area"},
-        warnings=warnings,
+        warnings=all_warnings,
     )
 
 

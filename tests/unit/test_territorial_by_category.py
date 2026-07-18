@@ -2,7 +2,7 @@ import uuid
 
 import pytest
 
-from app.domain.analysis.exceptions import IndicatorCalculationError
+from app.domain.analysis.warnings import WarningSeverity
 from app.domain.indicators.territorial import (
     TerritorialAreaRecord,
     calculate_territorial_area_by_category,
@@ -95,8 +95,14 @@ class TestPercentByCategory:
 
         assert result.raw_value == {"lote": pytest.approx(1.0)}
 
-    def test_raises_when_nothing_is_parcelavel(self) -> None:
+    def test_degrades_to_empty_when_nothing_is_parcelavel(self) -> None:
+        # ADR 013: a gleba with zero parcelavel area (e.g. entirely APP) is a
+        # legitimate degenerate case - warn and complete, don't fail the run.
         records = [_record(500.0, "sistema_viario", False)]
 
-        with pytest.raises(IndicatorCalculationError):
-            calculate_territorial_percent_by_category(records, metric_crs=31982)
+        result = calculate_territorial_percent_by_category(records, metric_crs=31982)
+
+        assert result.raw_value == {}
+        assert result.contributing_feature_ids == ()
+        assert [w.code for w in result.warnings] == ["no_parcelavel_area"]
+        assert result.warnings[0].severity == WarningSeverity.WARNING
