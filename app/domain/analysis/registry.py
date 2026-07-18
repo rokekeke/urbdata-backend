@@ -23,3 +23,6 @@ class IndicatorRegistry:
 
     def by_theme(self, theme: str) -> tuple[IndicatorDefinition, ...]:
         return tuple(item for item in self._definitions.values() if item.theme == theme)
+
+    def all(self) -> tuple[IndicatorDefinition, ...]:
+        return tuple(self._definitions.values())

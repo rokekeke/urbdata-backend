@@ -7,6 +7,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.infrastructure.database.models.analysis import AnalysisRun, AnalysisStatus
+from app.infrastructure.database.models.version import ProjectVersion
 
 
 class AnalysisRepository:
@@ -45,6 +46,27 @@ class AnalysisRepository:
         run.completed_at = datetime.now(UTC)
         run.duration_ms = duration_ms
         self._session.commit()
+
+    def list_runs(self, project_version_id: uuid.UUID) -> list[AnalysisRun]:
+        """Newest-first history of runs for one version (Fase 0, nota 28)."""
+        return list(
+            self._session.query(AnalysisRun)
+            .filter(AnalysisRun.project_version_id == project_version_id)
+            .order_by(AnalysisRun.run_at.desc())
+            .all()
+        )
+
+    def get_run_for_project(
+        self, project_id: uuid.UUID, run_id: uuid.UUID
+    ) -> AnalysisRun | None:
+        """Fetch one run, scoped to the project across all its versions -
+        `None` when the run doesn't exist or belongs to another project."""
+        return (
+            self._session.query(AnalysisRun)
+            .join(ProjectVersion, AnalysisRun.project_version_id == ProjectVersion.id)
+            .filter(AnalysisRun.id == run_id, ProjectVersion.project_id == project_id)
+            .first()
+        )
 
     def mark_failed(
         self, run_id: uuid.UUID, *, error: dict[str, Any], duration_ms: int

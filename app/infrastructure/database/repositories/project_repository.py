@@ -48,3 +48,15 @@ class ProjectRepository:
                 "Project has no active version.", context={"project_id": str(project_id)}
             )
         return version.id
+
+    def list_versions(self, project_id: uuid.UUID) -> list[ProjectVersion]:
+        """Newest-first versions of a project (Fase 0, nota 28: the frontend
+        must not have to assume "latest created == active"). The first entry
+        is the current one - the exact rule `current_version_id` applies."""
+        self.get(project_id)
+        return list(
+            self._session.query(ProjectVersion)
+            .filter(ProjectVersion.project_id == project_id)
+            .order_by(ProjectVersion.created_at.desc())
+            .all()
+        )

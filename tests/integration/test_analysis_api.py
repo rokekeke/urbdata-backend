@@ -217,3 +217,56 @@ def test_density_and_road_network_round_trip_through_the_real_api() -> None:
         assert persisted_roads_by_code["road_network.total_length"]["value"] == pytest.approx(
             roads["road_network.total_length"]["value"]
         )
+
+
+def test_versions_runs_and_error_shape_round_trip() -> None:
+    """Fase 0 endpoints (nota Obsidian 28/29): explicit versions, run
+    history including a failed run's structured error, and the unified
+    `{error, message, context}` detail shape."""
+    with TestClient(create_app()) as client:
+        project_id = str(
+            client.post("/v1/projects", json={"name": "Fase 0"}).json()["id"]
+        )
+
+        versions = client.get(f"/v1/projects/{project_id}/versions")
+        assert versions.status_code == 200, versions.text
+        version_rows = versions.json()
+        assert len(version_rows) == 1
+        assert version_rows[0]["is_current"] is True
+        assert version_rows[0]["number"] == 1
+        assert version_rows[0]["status"] == "active"
+
+        # No perimeter uploaded: the run must fail, be listed, and carry
+        # the context saying WHICH layer is missing.
+        failed = client.post(f"/v1/projects/{project_id}/analyze", json={"themes": ["density"]})
+        assert failed.status_code == 422
+        detail = failed.json()["detail"]
+        assert detail["error"] == "required_layer_missing"
+        assert detail["context"]["layer_type"] == "perimetro"
+
+        runs = client.get(f"/v1/projects/{project_id}/runs")
+        assert runs.status_code == 200, runs.text
+        run_rows = runs.json()
+        assert len(run_rows) == 1
+        assert run_rows[0]["status"] == "failed"
+        assert run_rows[0]["error"]["code"] == "required_layer_missing"
+        assert run_rows[0]["error"]["context"]["layer_type"] == "perimetro"
+
+        single = client.get(f"/v1/projects/{project_id}/runs/{run_rows[0]['id']}")
+        assert single.status_code == 200
+        assert single.json()["id"] == run_rows[0]["id"]
+
+        other_project_id = str(
+            client.post("/v1/projects", json={"name": "Outro"}).json()["id"]
+        )
+        cross = client.get(f"/v1/projects/{other_project_id}/runs/{run_rows[0]['id']}")
+        assert cross.status_code == 404
+        cross_detail = cross.json()["detail"]
+        assert cross_detail["error"] == "analysis_run_not_found"
+        assert set(cross_detail) == {"error", "message", "context"}
+
+        missing = client.get("/v1/projects/00000000-0000-0000-0000-000000000000")
+        assert missing.status_code == 404
+        missing_detail = missing.json()["detail"]
+        assert set(missing_detail) == {"error", "message", "context"}
+        assert missing_detail["error"] == "project_not_found"
