@@ -2,6 +2,7 @@
 
 - Status: aceito (decisoes travadas na nota Obsidian 28; refinamentos das notas 31/32)
 - Data: 2026-07-18
+- Emenda 19/07/2026: Decisao 7 (`feature_panel`, nota Obsidian 33)
 - Contexto: aba Documentacao (nota 24), backlog DOC-BE-001..010 (nota 25 /
   `docs/backlog/map-documentation-backend.md`), caminho definitivo do MVP
   (nota 28), analise do codigo-fonte do Kepler.gl (notas 31/32).
@@ -79,10 +80,15 @@ DocumentLayer
 │   │   └── opacity: float 0..1
 │   ├── null_color: hex | null
 │   └── labels: null                   (reservado, sem editor na v1)
-└── interaction                        (reservado na v1 - persiste e
-    ├── tooltip_fields: list[str]       faz round-trip integral, UI
-    ├── selectable: bool = true         incremental depois; filtros visuais
-    └── filters: null                   NUNCA alteram resultado persistido)
+└── interaction
+    ├── tooltip_fields: list[str]       (legado; leitura simples, fallback
+    │                                    quando feature_panel esta
+    │                                    desabilitado - nota 33)
+    ├── selectable: bool = true
+    ├── feature_panel: FeaturePanelConfig  (Decisao 7 - nucleo implementado
+    │                                       nesta emenda, nota 33)
+    └── filters: null                   (reservado na v1 - filtros visuais
+                                          NUNCA alteram resultado persistido)
 ```
 
 Vocabulario de `scale` herdado do par kepler.gl/d3-scale (nota 32) - o
@@ -185,6 +191,87 @@ exports.config (JSONB)
 - Formato v1: PNG. Presets de prancha (A4/A3, DPI) aguardam definicao do
   urbanista - fora da v1.
 
+## Decisao 7 - Painel informativo de feicao (feature_panel, nota 33)
+
+Emenda de 19/07/2026. `DocumentLayer.interaction.feature_panel` deixa de
+ser campo reservado e passa a ter schema proprio - nucleo minimo da nota
+Obsidian 33 (painel que abre ao clicar numa feicao, combinando atributos
+e indicadores pelo mesmo UUID). `tooltip_fields` permanece como fallback
+de leitura simples quando o painel esta desabilitado.
+
+```text
+FeaturePanelConfig
+├── enabled: bool = false
+├── title_field: str | null              (nome de propriedade; existencia
+│                                          na camada verificada na Fase 3,
+│                                          mesma regra de representation.field)
+├── width: "compact" | "medium" = "compact"
+└── blocks: list[TextBlock | TableBlock]  (max 8, discriminado por "type")
+
+TextBlock
+├── type: "text"
+├── source: "property" | "indicator"
+├── field: str                            (nome de propriedade OU
+│                                          indicator_code, conforme source)
+└── style: "body" | "subtitle" = "body"
+
+TableBlock
+├── type: "table"
+├── layout: "key_value" = "key_value"     (unico layout na v1)
+└── fields: list[TableField]              (1..12, sem (source,key) repetido)
+
+TableField
+├── source: "property" | "indicator"
+├── key: str
+├── label: str                            (1..60 caracteres)
+└── format: FieldFormat | null
+    ├── type: "text" | "number"
+    ├── decimals: int | null              (0..6, so com type=number)
+    ├── prefix: str | null                (so com type=number, <=8 chars)
+    └── suffix: str | null                (so com type=number, <=16 chars)
+```
+
+Regras estruturais (Pydantic, `extra=forbid`):
+
+1. `source=indicator` em `TextBlock`/`TableField` exige `indicator_code`
+   registrado e com `granularity=por_feicao` - mesma checagem de
+   `Representation` (Decisao 2), fatorada em helper compartilhado;
+2. `source=property` nao valida a existencia do campo na camada aqui -
+   como `Representation.field`, isso e responsabilidade do CRUD (Fase 3);
+3. `format.type=text` nao aceita `decimals`/`prefix`/`suffix` - formato
+   invalido para o tipo e rejeitado, nunca ignorado silenciosamente;
+4. `TableBlock.fields` nao aceita duas entradas com o mesmo par
+   `(source, key)`;
+5. limites de tamanho (8 blocos, 12 campos por tabela, rotulo ate 60
+   caracteres) - o painel nunca carrega texto livre extenso: blocos
+   referenciam campos/indicadores, nunca uma string arbitraria do
+   usuario (sem editor de HTML/CSS, por definicao da nota 33).
+
+### Exemplo valido
+
+```json
+{"type": "table", "layout": "key_value", "fields": [
+  {"source": "property", "key": "quadra_id", "label": "Quadra", "format": null},
+  {"source": "indicator", "key": "lots.frontage_length", "label": "Testada",
+   "format": {"type": "number", "decimals": 1, "prefix": null, "suffix": "m"}}
+]}
+```
+
+### Exemplos invalidos
+
+- `{"type": "text", "source": "indicator", "field": "territorial.total_area", ...}`
+  (indicador de projeto, nao por feicao);
+- `{"type": "table", "layout": "key_value", "fields": []}` (minimo 1 campo);
+- `format: {"type": "text", "decimals": 2}` (decimals so com type=number);
+- dois campos com `source=property, key=quadra_id` no mesmo `TableBlock`.
+
+### Fora desta decisao (nota 33, pendente de validacao de produto)
+
+Ancoragem do painel na feicao vs. painel fixo durante navegacao; alcance
+dos blocos de texto (somente campo, por decisao desta emenda, nao texto
+estatico livre); disponibilidade de indicadores alem dos por-feicao;
+inclusao do painel na exportacao cartografica (Decisao 6).
+
 ## Fronteira de renderizacao (reafirmada, com correcao tecnica)
 
 Renderiza o **cliente**; o backend congela o snapshot e arquiva o artefato.
@@ -257,3 +344,7 @@ Invalidos (devem ser rejeitados com caminho do campo):
 Labels com editor, simbologia de pontos alem do default, filtros com UI,
 mapas-base com credencial (exigira proxy), PDF/SVG, render server-side,
 presets de prancha A4/A3, exportacao para Kepler.gl (pos-MVP, nota 31).
+Do `feature_panel` (Decisao 7): ancoragem alternativa (painel fixado
+durante a navegacao), inclusao do painel na exportacao cartografica,
+blocos alem de texto/tabela, formatacao de campo alem de
+decimais/prefixo/sufixo - pendencias explicitas da nota 33.
