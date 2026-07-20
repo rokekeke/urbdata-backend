@@ -3,6 +3,8 @@
 - Status: aceito (decisoes travadas na nota Obsidian 28; refinamentos das notas 31/32)
 - Data: 2026-07-18
 - Emenda 19/07/2026: Decisao 7 (`feature_panel`, nota Obsidian 33)
+- Emenda 19/07/2026: Decisao 8 (CRUD, rotas e leitura de referencias
+  quebradas - checkpoint 4.1, nota Obsidian 38)
 - Contexto: aba Documentacao (nota 24), backlog DOC-BE-001..010 (nota 25 /
   `docs/backlog/map-documentation-backend.md`), caminho definitivo do MVP
   (nota 28), analise do codigo-fonte do Kepler.gl (notas 31/32).
@@ -120,6 +122,20 @@ envelope `{error, message, context}` e aponta o caminho do campo.
 10. `basemap_id` existente no catalogo (Decisao 5);
 11. comportamento de nulos explicito (`null_behavior`, default transparent -
     espelha o `NO_VALUE_COLOR` transparente do Kepler.gl, nota 32).
+
+Regras 1-3 e 4 (metade "tipo do dado") dependem de contexto de banco e sao
+aplicadas pelo modulo `contextual_validation.py` na Fase 3 (item 4.3,
+19/07/2026), nao pelos modelos Pydantic (esta secao descreve o contrato
+completo; a fronteira exata entre o que o Pydantic valida sem banco e o
+que so a Fase 3 pode validar esta documentada no docstring do modulo). A
+metade "geometria" da regra 4 nao precisou de codigo adicional: `LayerStyle`
+sempre carrega `fill` e `stroke`, o valor nao usado pela geometria real
+simplesmente nao renderiza - nao existe combinacao mode x geometria
+estruturalmente invalida. Regra 4 (tipo do dado) cobre: campo vazio/misto/
+cardinalidade categorica excedida rejeita qualquer modo alem de `single`;
+`sequential`/`diverging` exigem campo numerico ou indicador escalar
+(`unit != "composto"` no catalogo - `quadras.stats` e
+`quadras.min_rotated_rectangle` sao os dois casos reais hoje).
 
 ## Decisao 4 - Versionamento e concorrencia
 
@@ -271,6 +287,79 @@ Ancoragem do painel na feicao vs. painel fixo durante navegacao; alcance
 dos blocos de texto (somente campo, por decisao desta emenda, nao texto
 estatico livre); disponibilidade de indicadores alem dos por-feicao;
 inclusao do painel na exportacao cartografica (Decisao 6).
+
+## Decisao 8 - CRUD, rotas e leitura de referencias quebradas
+
+Emenda de 19/07/2026, checkpoint 4.1 (nota Obsidian 38) - resolvida com o
+responsavel antes de qualquer codigo, por tocar comportamento ja
+publicado (ADR 009) e por definir semantica que a Fase 3 inteira
+depende.
+
+### Rotas - aninhado para a colecao, achatado para o item
+
+`MapDocument` nao segue a convencao de "versao corrente" que `/analyze`
+e `/runs` usam - multiplos documentos por versao, incluindo versoes
+antigas/arquivadas (Decisao 4). A versao precisa ser explicita na URL
+para listar/criar; uma vez com o id do documento em maos, ele e unico
+por si so (mesmo padrao ja usado por `/runs/{run_id}`):
+
+```text
+POST   /v1/projects/{project_id}/versions/{version_id}/documents
+GET    /v1/projects/{project_id}/versions/{version_id}/documents
+GET    /v1/projects/{project_id}/documents/{document_id}
+PUT    /v1/projects/{project_id}/documents/{document_id}
+DELETE /v1/projects/{project_id}/documents/{document_id}
+```
+
+`project_id` mantido no path das rotas de item por consistencia com o
+resto da API e para a checagem de pertencimento (404 se o documento nao
+pertence ao projeto), nao porque o id do documento precise dele para ser
+unico.
+
+### Leitura com referencia quebrada - diagnostico, nunca falha
+
+Um documento salvo pode ficar com `layer_id` apontando para camada
+apagada, ou `indicator_code` incompativel apos remapeamento de atributos.
+`GET` **sempre** devolve o documento integro - nunca falha e nunca corrige
+a configuracao salva silenciosamente (regra invariante 2 do projeto) -
+acompanhado de um bloco `integrity_warnings` separado, calculado em cada
+leitura (nao persistido), listando toda referencia invalida encontrada:
+
+```text
+IntegrityWarning
+├── code: "layer_not_found" | "indicator_incompatible"
+├── layer_id: UUID
+└── message: str
+```
+
+O documento continua editavel e salvavel nesse estado - o proximo `PUT`
+roda a validacao contextual normal (Decisao 8, validacao na escrita)
+sobre o que o cliente de fato enviar, nao sobre o estado antigo.
+
+### A armadilha da camada de quadras (ADR 009) - resolvida pelo mecanismo acima, sem mudanca de codigo
+
+`POST /layers/quadras/derive` apaga e recria a camada derivada com
+**UUID novo** a cada chamada (ADR 009, comportamento ja publicado). Um
+documento que referenciava a quadra antiga fica orfao no proximo
+re-derive. Decisao: **nao alterar `derive_quadras_layer`** - o
+diagnostico de leitura acima ja cobre esse caso como mais uma instancia
+de `layer_not_found`, sem codigo especifico para quadras. Estabilizar o
+id da camada derivada (UPDATE em vez de DELETE+INSERT) fica registrado
+como opcao futura caso o diagnostico se mostre insuficiente na pratica,
+mas nao e feito agora - menor risco, nao mexe em ADR 009.
+
+### DELETE - hard, nao soft
+
+`exports.config` ja copia a composicao inteira **por valor** no momento
+do snapshot (Decisao 6) - o export nunca releem o documento vivo depois
+de criado. O schema atual de `exports` nao tem uma FK real para
+`map_documents`; quando `document_id` aparecer, e um valor dentro do
+JSONB do snapshot, nao uma constraint de banco. Logo, apagar um
+`MapDocument` nunca invalida um export ja produzido. **DELETE e hard**
+(`DELETE FROM map_documents WHERE id = ...`), sem coluna `deleted_at` nem
+filtro extra em toda leitura - o caso de uso que justificaria soft delete
+(auditoria de documentos apagados) nao existe hoje e nao deve ser
+antecipado.
 
 ## Fronteira de renderizacao (reafirmada, com correcao tecnica)
 
