@@ -60,3 +60,24 @@ class ProjectRepository:
             .order_by(ProjectVersion.created_at.desc())
             .all()
         )
+
+    def get_version_for_project(
+        self, project_id: uuid.UUID, version_id: uuid.UUID
+    ) -> ProjectVersion:
+        """Resolve one version scoped to a project - raises the same 404
+        whether the version doesn't exist at all or belongs to a different
+        project (never confirms cross-project existence). MapDocument
+        routes need this: unlike `/analyze`/`/runs`, they take an explicit
+        `version_id` in the URL rather than resolving "current" (ADR 014,
+        Decisao 8)."""
+        version = (
+            self._session.query(ProjectVersion)
+            .filter(ProjectVersion.id == version_id, ProjectVersion.project_id == project_id)
+            .first()
+        )
+        if version is None:
+            raise ProjectVersionNotFoundError(
+                "Project version not found for this project.",
+                context={"project_id": str(project_id), "version_id": str(version_id)},
+            )
+        return version
