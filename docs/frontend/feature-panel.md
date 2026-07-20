@@ -1,5 +1,7 @@
 # Painel informativo de feição
 
+Documento funcional compartilhado entre as equipes de frontend e backend.
+
 ## Finalidade
 
 Exibir informações contextuais de uma geometria selecionada sem interromper a leitura do mapa. A configuração visual é definida por camada e editada por um dropdown compacto no painel de ferramentas.

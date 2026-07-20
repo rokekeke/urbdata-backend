@@ -1,6 +1,7 @@
 # URBDATA UX
 
-Protótipo funcional e isolado da experiência do URBDATA, construído a partir das decisões registradas nas notas 27, 28 e 29 do vault do projeto.
+Interface web do URBDATA, agora mantida na pasta `frontend/` do monorepo da
+plataforma e construída a partir das decisões registradas no vault do projeto.
 
 Este é o frontend oficial do projeto. O runtime adotado nesta fase é Next.js 16 com React 19, Vinext/Vite e saída compatível com Cloudflare Workers/Sites.
 
@@ -15,16 +16,17 @@ Este é o frontend oficial do projeto. O runtime adotado nesta fase é Next.js 1
 - paletas, transparência, cor e estilo de linha;
 - opção sem mapa-base e OSM claro;
 - legenda vinculada à configuração;
-- salvamento local demonstrativo;
-- exportação PNG local usando o canvas do próprio MapLibre;
-- dados explícitos de demonstração, sem chamadas ao backend.
+- leitura de projetos, versões, camadas, atributos e resultados pela API;
+- disponibilidade e execução de diagnósticos;
+- CRUD de composições cartográficas (`MapDocument`) com controle de conflito;
+- exportação PNG reproduzível com snapshot e upload do arquivo;
+- estados explícitos de carregamento, vazio, erro e indisponibilidade.
 
 ## Limites intencionais
 
-- nenhum contrato de API foi inventado antes da publicação da ADR 014;
-- nenhuma configuração é persistida no backend;
-- o join indicador-feição está demonstrado nos dados locais, mas será integrado aos resultados reais após o OpenAPI definitivo;
-- PDF, SVG, autenticação, tiles e deck.gl estão fora do MVP atual.
+- a configuração avançada do painel de feição ainda é mantida apenas no frontend;
+- PDF, SVG, autenticação e deck.gl estão fora do MVP atual;
+- novas capacidades só são integradas após atualização formal do contrato OpenAPI.
 
 ## Runtime oficial
 
@@ -78,7 +80,8 @@ pnpm api:check  # verifica se os tipos correspondem ao snapshot versionado
 
 O lint atual não possui erros. Existe um aviso conhecido sobre dependências de `useEffect` em `MapCanvas.tsx`, que será tratado sem bloquear esta fundação.
 
-A arquitetura da integração, o fluxo para atualizar o OpenAPI e as regras para novas queries estão em [`frontend/frontend-foundation.md`](frontend/frontend-foundation.md).
+A arquitetura da integração, o fluxo para atualizar o OpenAPI e as regras para
+novas queries estão em [`docs/frontend/foundation.md`](../docs/frontend/foundation.md).
 
 ## Estrutura do runtime
 
@@ -90,7 +93,7 @@ A arquitetura da integração, o fluxo para atualizar o OpenAPI e as regras para
 - `worker/index.ts`: ponto de entrada do Cloudflare Worker;
 - `.openai/hosting.json`: declaração lógica dos recursos de hospedagem;
 - `vite.config.ts`, `next.config.ts` e arquivos de TypeScript/PostCSS: configuração do runtime;
-- `frontend/ui/`: documentação funcional da interface.
+- `../docs/frontend/`: documentação funcional e decisões de integração.
 - `app/lib/api/`: cliente OpenAPI único, tipos gerados e fronteira de erros de transporte;
 
 ### Preservada, mas candidata à remoção em tarefa separada

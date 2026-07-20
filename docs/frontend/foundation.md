@@ -7,16 +7,16 @@ Esta camada separa o contrato do backend, o transporte HTTP, os erros de aplica�
 ## Estrutura
 
 ```text
-contracts/openapi.json             snapshot versionado do backend
-app/lib/api/schema.d.ts            tipos gerados, nunca editados à mão
-app/lib/runtimeConfig.ts           validação da URL pública
-app/lib/api/client.ts              única instância openapi-fetch
-app/lib/api/request.ts             erros e resposta do transporte
-app/lib/errors/appError.ts         erro estável para a interface
-app/lib/query/                     políticas e chaves TanStack Query
-app/features/<feature>/api/        operações tipadas por domínio de tela
-app/features/<feature>/hooks/      queries e mutations consumidas pela UI
-tests/                             testes sem backend ou internet
+frontend/contracts/openapi.json             snapshot versionado do backend
+frontend/app/lib/api/schema.d.ts            tipos gerados, nunca editados à mão
+frontend/app/lib/runtimeConfig.ts           validação da URL pública
+frontend/app/lib/api/client.ts              única instância openapi-fetch
+frontend/app/lib/api/request.ts             erros e resposta do transporte
+frontend/app/lib/errors/appError.ts         erro estável para a interface
+frontend/app/lib/query/                     políticas e chaves TanStack Query
+frontend/app/features/<feature>/api/        operações tipadas por domínio de tela
+frontend/app/features/<feature>/hooks/      queries e mutations consumidas pela UI
+frontend/tests/                             testes sem backend ou internet
 ```
 
 ## Fluxo de uma consulta
@@ -66,15 +66,16 @@ Não use `fetch` em componentes ou stores. A regra de lint impede esse acoplamen
 
 ## Execução local integrada
 
-Backend, em `C:\Users\URB\Documents\urbdata-backend`:
+Na raiz do monorepo, inicie o backend:
 
 ```powershell
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8000
 ```
 
-Frontend, em `C:\Users\URB\Documents\URBDATA-UX`:
+Em outro terminal, ainda a partir da raiz, inicie o frontend:
 
 ```powershell
+Set-Location frontend
 Copy-Item .env.example .env.local
 pnpm dev
 ```
@@ -84,6 +85,7 @@ A configuração local usa `NEXT_PUBLIC_API_BASE_URL=http://localhost:8000`. O p
 ## Validação local
 
 ```bash
+cd frontend
 pnpm install --frozen-lockfile
 pnpm api:check
 pnpm typecheck
@@ -97,12 +99,10 @@ Os testes simulam `fetch` e as funções de feature. Eles não dependem de Docke
 ## Limitações atuais
 
 - sem autenticação;
-- `useProjects()` é a primeira query; as demais entram na integração de leitura;
-- mapa e telas ainda usam dados demonstrativos;
-- sem CRUD de `MapDocument`;
-- sem persistência do `feature_panel`;
-- sem snapshot e upload integrado da exportação;
-- o lint mantém um aviso conhecido em `MapCanvas.tsx` até a reorganização do ciclo de vida do mapa.
+- a configuração avançada de `feature_panel` ainda não pertence ao contrato persistido;
+- o snapshot OpenAPI precisa ser atualizado explicitamente quando o backend mudar;
+- PDF e SVG permanecem fora do primeiro recorte de exportação;
+- a exportação PNG depende de fontes raster que permitam leitura do canvas no navegador;
 - `pnpm peers check` registra uma incompatibilidade não bloqueante entre `@cloudflare/workers-types 5.x` e o peer esperado pelo `wrangler 4.92.0`; build e testes passam, mas o alinhamento deve entrar na próxima manutenção do runtime antes da implantação.
 
 ## Política remota
