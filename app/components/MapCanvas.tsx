@@ -5,6 +5,11 @@ import type { FeatureCollection } from "geojson";
 import type { ExpressionSpecification, GeoJSONSource, Map as MapLibreMap } from "maplibre-gl";
 
 import { useBasemaps } from "../features/catalog/hooks/useBasemaps";
+import {
+  CATEGORY_FALLBACK_COLOR,
+  normalizeCategoryKey,
+  type ResultOverlayDefinition,
+} from "../features/results/model/resultsPresentation";
 import { compileFillColor, dashArray, resolveLayerPresentation } from "../lib/styleCompiler";
 import type { LayerStyleConfig } from "../lib/types";
 import { useWorkspaceStore } from "../store/useWorkspaceStore";
@@ -14,13 +19,7 @@ interface MapCanvasProps {
   resultOverlay?: MapResultOverlay | null;
 }
 
-export interface MapResultOverlay {
-  layerId: string;
-  featureKey: "feature_id" | "quadra_id";
-  values: Record<string, unknown>;
-  min: number;
-  max: number;
-}
+export type MapResultOverlay = ResultOverlayDefinition;
 
 const RESULT_PROPERTY = "__urbdata_result";
 const EMPTY_MAP_STYLE = {
@@ -80,6 +79,32 @@ function collectionWithResult(
   layerId: string,
 ): FeatureCollection {
   if (!overlay || overlay.layerId !== layerId) return collection;
+
+  if (overlay.kind === "categorical") {
+    // A propriedade carrega o valor bruto mapeado ("SISTEMA VIÁRIO");
+    // a junção normaliza dos dois lados, espelhando o normalize_key do
+    // backend, e grava a chave canônica da categoria na feição.
+    const byNormalized = new Map(
+      overlay.categories.map((category) => [category.normalizedKey, category.key]),
+    );
+    return {
+      ...collection,
+      features: collection.features.map((feature) => {
+        const properties = feature.properties ?? {};
+        const rawValue = properties[overlay.property];
+        const categoryKey = typeof rawValue === "string" && rawValue
+          ? byNormalized.get(normalizeCategoryKey(rawValue))
+          : undefined;
+        return {
+          ...feature,
+          properties: categoryKey === undefined
+            ? properties
+            : { ...properties, [RESULT_PROPERTY]: categoryKey },
+        };
+      }),
+    };
+  }
+
   return {
     ...collection,
     features: collection.features.map((feature) => {
@@ -102,6 +127,24 @@ function collectionWithResult(
 }
 
 function resultColor(overlay: MapResultOverlay): ExpressionSpecification {
+  if (overlay.kind === "categorical") {
+    const matchPairs = overlay.categories.flatMap((category) => [category.key, category.color]);
+    // `matchPairs` nunca é vazio (buildResultOverlay devolve null sem
+    // categorias), mas o spread impede o TS de provar a aridade mínima da
+    // tupla "match" - daí o cast em duas etapas.
+    const matchExpression = [
+      "match",
+      ["get", RESULT_PROPERTY],
+      ...matchPairs,
+      CATEGORY_FALLBACK_COLOR,
+    ] as unknown as ExpressionSpecification;
+    return [
+      "case",
+      ["has", RESULT_PROPERTY],
+      matchExpression,
+      CATEGORY_FALLBACK_COLOR,
+    ] as ExpressionSpecification;
+  }
   return [
     "case",
     ["has", RESULT_PROPERTY],

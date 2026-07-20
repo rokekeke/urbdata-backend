@@ -7,6 +7,7 @@ import ExportDialog from "./ExportDialog";
 import FeaturePanel from "./FeaturePanel";
 import MapCanvas from "./MapCanvas";
 import MapDocumentControls from "./MapDocumentControls";
+import OverviewWorkspace from "./OverviewWorkspace";
 import ResultsWorkspace from "./ResultsWorkspace";
 import type { Basemap } from "../features/catalog/api/listBasemaps";
 import type { CatalogIndicator } from "../features/catalog/api/listCatalogIndicators";
@@ -371,8 +372,20 @@ export default function UrbdataPrototype() {
             error={integrationError}
             emptyMessage={workspace.projects.isEmpty ? "Nenhum projeto disponível." : "A versão ativa não possui camadas para composição."}
           />
+        ) : activeSection === "visao-geral" ? (
+          <OverviewWorkspace
+            projects={workspace.projects.data ?? []}
+            projectsLoading={workspace.projects.isLoading}
+            projectsError={workspace.projects.error}
+            activeProjectId={workspace.activeProjectId}
+            activeVersionId={workspace.activeVersionId}
+            projectLayers={workspace.layers.data ?? []}
+            onSelectProject={(id) => { resetDocumentSession(); workspace.selectProject(id); }}
+            onOpenData={() => setSection("dados")}
+          />
         ) : activeSection === "dados" ? (
           <DataWorkspace
+            projectId={workspace.activeProjectId}
             activeVersion={workspace.activeVersion}
             layers={layers}
             selectedLayer={selectedLayer ?? null}

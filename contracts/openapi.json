@@ -496,6 +496,63 @@
         }
       }
     },
+    "/v1/projects/{project_id}/layers/{layer_id}": {
+      "delete": {
+        "tags": [
+          "layers"
+        ],
+        "summary": "Delete Layer",
+        "description": "Hard delete (Frente 3, nota 52): remove a camada e suas feicoes.\nFeicoes de outras camadas que apontavam para estas (quadra/lote) sao\ndesvinculadas, nunca removidas em cascata; resultados ja persistidos e\ndocumentos cartograficos ficam intactos - referencias orfas viram\n`integrity_warnings` na leitura (ADR 014, Decisao 8).",
+        "operationId": "delete_layer_v1_projects__project_id__layers__layer_id__delete",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "layer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Layer Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/projects/{project_id}/layers/{layer_id}/geojson": {
       "get": {
         "tags": [
@@ -1748,6 +1805,20 @@
               }
             ]
           },
+          "value_shape": {
+            "$ref": "#/components/schemas/ValueShape"
+          },
+          "category_feature_property": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Feature Property"
+          },
           "required_layers": {
             "items": {
               "type": "string"
@@ -1773,6 +1844,8 @@
           "formula_version",
           "granularity",
           "feature_key",
+          "value_shape",
+          "category_feature_property",
           "required_layers",
           "optional_layers"
         ],
@@ -3692,6 +3765,18 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "ValueShape": {
+        "type": "string",
+        "enum": [
+          "scalar",
+          "category_breakdown",
+          "categorical_label",
+          "feature_series",
+          "feature_compound"
+        ],
+        "title": "ValueShape",
+        "description": "Structure of the raw value this indicator persists (`value`/\n`value_json` in `indicator_results`) - drives which visualization the\nfrontend picks for it (indicator representation review, 2026-07-20).\nIndependent of `unit`/number formatting, which stays on the\ncalculation result (`IndicatorDefinition.unit`), not here.\n\n- SCALAR: one number for the whole project.\n- CATEGORY_BREAKDOWN: dict[categoria -> numero] for the whole project\n  (e.g. area/percentual por macroarea ou uso do solo).\n- CATEGORICAL_LABEL: a single category name for the whole project (or\n  null on a tie/no data) - not a number at all.\n- FEATURE_SERIES: one number per feature/quadra (`por_feicao`) - the\n  existing min/mean/max + ranked-list view already suits this.\n- FEATURE_COMPOUND: one compound record (dict of sub-fields) per\n  feature/quadra (`por_feicao`) - needs a table, not a single bar."
       },
       "Viewport": {
         "properties": {
