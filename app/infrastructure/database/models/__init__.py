@@ -21,6 +21,7 @@ from app.infrastructure.database.models.layer import (
     LayerType,
     ProjectLayer,
 )
+from app.infrastructure.database.models.map_document import MapDocument
 from app.infrastructure.database.models.project import Project
 from app.infrastructure.database.models.style import StylePreset
 from app.infrastructure.database.models.validation import (
@@ -53,4 +54,5 @@ __all__ = [
     "IndicatorClassification",
     "StylePreset",
     "Export",
+    "MapDocument",
 ]
