@@ -270,3 +270,55 @@ def test_versions_runs_and_error_shape_round_trip() -> None:
         missing_detail = missing.json()["detail"]
         assert set(missing_detail) == {"error", "message", "context"}
         assert missing_detail["error"] == "project_not_found"
+
+
+def test_representation_options_aggregate_in_the_database() -> None:
+    """DOC-BE-004 (ADR 014): the attributes endpoint returns per-field
+    aggregates, recommendations and compatible indicators - computed by
+    SQL over the real PostGIS instance."""
+    with TestClient(create_app()) as client:
+        project_id = str(client.post("/v1/projects", json={"name": "Rep opts"}).json()["id"])
+        square = [[
+            [-52.001, -27.001], [-51.999, -27.001], [-51.999, -26.999],
+            [-52.001, -26.999], [-52.001, -27.001],
+        ]]
+        layer_id = _upload(
+            client,
+            project_id,
+            layer_type="territorio",
+            features=[
+                _feature("Polygon", square, macro="Lote", uso="Residencial", area="100.5"),
+                _feature("Polygon", square, macro="Lote", uso="Comercial", area="220"),
+                _feature("Polygon", square, macro="AVL", uso="", area="abc"),
+            ],
+        )
+        _map_attributes(client, project_id, layer_id, {"macroarea": "macro"})
+
+        response = client.get(f"/v1/projects/{project_id}/layers/{layer_id}/attributes")
+        assert response.status_code == 200, response.text
+        body = response.json()
+
+        assert body["feature_count"] == 3
+        assert body["compatible_indicators"] == ["lots.frontage_length"]
+        fields = {entry["field"]: entry for entry in body["fields"]}
+
+        macro_source = fields["macro"]
+        assert macro_source["origin"] == "source"
+        assert macro_source["detected_type"] == "text"
+        assert macro_source["recommended_mode"] == "categorical"
+        assert macro_source["distinct_values"] == ["AVL", "Lote"]
+
+        area = fields["area"]
+        # "abc" mixed in with numbers -> honestly unsuitable, not coerced.
+        assert area["detected_type"] == "mixed"
+        assert area["recommended_mode"] is None
+        assert area["unsuitable_reason"] == "mixed_types"
+
+        uso = fields["uso"]
+        assert uso["empty_count"] == 1
+        assert uso["cardinality"] == 2
+
+        macro_mapped = fields["macroarea"]
+        assert macro_mapped["origin"] == "mapped"
+        assert macro_mapped["recommended_mode"] == "categorical"
+        assert sorted(macro_mapped["distinct_values"]) == ["avl", "lote"]

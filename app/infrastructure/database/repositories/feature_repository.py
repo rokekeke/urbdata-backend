@@ -9,12 +9,13 @@ import geopandas as gpd
 from geoalchemy2 import Geography
 from geoalchemy2.shape import from_shape, to_shape
 from shapely.geometry import shape as shapely_shape
-from sqlalchemy import cast, func
+from sqlalchemy import cast, func, text
 from sqlalchemy.orm import Session, aliased
 
 from app.config.macroarea_mapping import Macroarea, resolve_macroarea
 from app.config.road_hierarchy_mapping import resolve_road_status
 from app.domain.analysis.exceptions import RequiredLayerMissingError
+from app.domain.cartography.representation_options import FieldOrigin, FieldStats
 from app.domain.geospatial.geometry import dissolve_by_group
 from app.domain.geospatial.layers import (
     DerivedQuadrasLayerResult,
@@ -136,6 +137,206 @@ class FeatureRepository:
 
     def list_features(self, layer_id: uuid.UUID) -> list[Feature]:
         return list(self._session.query(Feature).filter(Feature.layer_id == layer_id).all())
+
+    # Representation metadata (DOC-BE-004, ADR 014): everything aggregated
+    # in SQL - the layer is never scanned in Python. 33 = block limit (32)
+    # + 1, so a client can detect categorical overflow from the list itself.
+    _DISTINCT_LIMIT = 33
+    _NUMERIC_REGEX = r"^-?[0-9]+(\.[0-9]+)?$"
+
+    _SOURCE_STATS_SQL = text(
+        """
+        SELECT kv.key AS field,
+               count(*) AS present_count,
+               count(*) FILTER (WHERE kv.value IS NULL OR btrim(kv.value) = '')
+                   AS empty_count,
+               count(DISTINCT kv.value)
+                   FILTER (WHERE kv.value IS NOT NULL AND btrim(kv.value) <> '')
+                   AS cardinality,
+               count(*) FILTER (WHERE kv.value ~ :numeric_regex) AS numeric_count,
+               min(kv.value::numeric) FILTER (WHERE kv.value ~ :numeric_regex)
+                   AS min_value,
+               max(kv.value::numeric) FILTER (WHERE kv.value ~ :numeric_regex)
+                   AS max_value
+        FROM features f
+        CROSS JOIN LATERAL jsonb_each_text(f.source_properties) AS kv(key, value)
+        WHERE f.layer_id = :layer_id
+        GROUP BY kv.key
+        ORDER BY kv.key
+        """
+    )
+
+    _SOURCE_DISTINCT_SQL = text(
+        """
+        SELECT field, value
+        FROM (
+            SELECT kv.key AS field, kv.value AS value,
+                   row_number() OVER (PARTITION BY kv.key ORDER BY kv.value)
+                       AS position
+            FROM features f
+            CROSS JOIN LATERAL jsonb_each_text(f.source_properties) AS kv(key, value)
+            WHERE f.layer_id = :layer_id
+              AND kv.key = ANY(:fields)
+              AND kv.value IS NOT NULL AND btrim(kv.value) <> ''
+            GROUP BY kv.key, kv.value
+        ) ranked
+        WHERE position <= :distinct_limit
+        ORDER BY field, value
+        """
+    )
+
+    def aggregate_representation_stats(self, layer_id: uuid.UUID) -> list[FieldStats]:
+        """Per-field aggregates for the representation editor (DOC-BE-004)."""
+        source_rows = self._session.execute(
+            self._SOURCE_STATS_SQL,
+            {"layer_id": str(layer_id), "numeric_regex": self._NUMERIC_REGEX},
+        ).all()
+
+        low_cardinality = [
+            row.field for row in source_rows if 0 < row.cardinality <= self._DISTINCT_LIMIT
+        ]
+        distinct_by_field: dict[str, list[str]] = {}
+        if low_cardinality:
+            for field, value in self._session.execute(
+                self._SOURCE_DISTINCT_SQL,
+                {
+                    "layer_id": str(layer_id),
+                    "fields": low_cardinality,
+                    "distinct_limit": self._DISTINCT_LIMIT,
+                },
+            ):
+                distinct_by_field.setdefault(field, []).append(value)
+
+        stats = [
+            FieldStats(
+                field=row.field,
+                origin=FieldOrigin.SOURCE,
+                present_count=row.present_count,
+                empty_count=row.empty_count,
+                cardinality=row.cardinality,
+                numeric_count=row.numeric_count,
+                min_value=float(row.min_value) if row.min_value is not None else None,
+                max_value=float(row.max_value) if row.max_value is not None else None,
+                distinct_values=(
+                    tuple(distinct_by_field[row.field])
+                    if row.field in distinct_by_field
+                    else None
+                ),
+            )
+            for row in source_rows
+        ]
+        stats.extend(self._mapped_column_stats(layer_id))
+        return stats
+
+    def _mapped_column_stats(self, layer_id: uuid.UUID) -> list[FieldStats]:
+        """Aggregates for the typed internal columns fed by attribute
+        mapping. Only columns with at least one value are reported."""
+        total = (
+            self._session.query(func.count(Feature.id))
+            .filter(Feature.layer_id == layer_id)
+            .scalar()
+            or 0
+        )
+        stats: list[FieldStats] = []
+        if total == 0:
+            return stats
+
+        text_columns = {
+            "macroarea": Feature.macroarea,
+            "land_use": Feature.land_use,
+            "quadra_id": Feature.quadra_id,
+            "road_status": Feature.road_status,
+        }
+        for name, column in text_columns.items():
+            filled, cardinality = (
+                self._session.query(func.count(column), func.count(func.distinct(column)))
+                .filter(Feature.layer_id == layer_id)
+                .one()
+            )
+            if not filled:
+                continue
+            distinct_values: tuple[str, ...] | None = None
+            if cardinality <= self._DISTINCT_LIMIT:
+                distinct_values = tuple(
+                    value
+                    for (value,) in self._session.query(func.distinct(column))
+                    .filter(Feature.layer_id == layer_id, column.isnot(None))
+                    .order_by(column)
+                    .limit(self._DISTINCT_LIMIT)
+                )
+            stats.append(
+                FieldStats(
+                    field=name,
+                    origin=FieldOrigin.MAPPED,
+                    present_count=total,
+                    empty_count=total - filled,
+                    cardinality=cardinality,
+                    numeric_count=0,
+                    min_value=None,
+                    max_value=None,
+                    distinct_values=distinct_values,
+                )
+            )
+
+        numeric_columns = {
+            "ca_max": Feature.ca_max,
+            "reference_area_m2": Feature.reference_area_m2,
+        }
+        for name, numeric_column in numeric_columns.items():
+            filled, cardinality, min_value, max_value = (
+                self._session.query(
+                    func.count(numeric_column),
+                    func.count(func.distinct(numeric_column)),
+                    func.min(numeric_column),
+                    func.max(numeric_column),
+                )
+                .filter(Feature.layer_id == layer_id)
+                .one()
+            )
+            if not filled:
+                continue
+            stats.append(
+                FieldStats(
+                    field=name,
+                    origin=FieldOrigin.MAPPED,
+                    present_count=total,
+                    empty_count=total - filled,
+                    cardinality=cardinality,
+                    numeric_count=filled,
+                    min_value=float(min_value) if min_value is not None else None,
+                    max_value=float(max_value) if max_value is not None else None,
+                    distinct_values=None,
+                )
+            )
+
+        filled_bool = (
+            self._session.query(func.count(Feature.parcelavel))
+            .filter(Feature.layer_id == layer_id)
+            .scalar()
+            or 0
+        )
+        if filled_bool:
+            cardinality_bool = (
+                self._session.query(func.count(func.distinct(Feature.parcelavel)))
+                .filter(Feature.layer_id == layer_id)
+                .scalar()
+                or 0
+            )
+            stats.append(
+                FieldStats(
+                    field="parcelavel",
+                    origin=FieldOrigin.MAPPED,
+                    present_count=total,
+                    empty_count=total - filled_bool,
+                    cardinality=cardinality_bool,
+                    numeric_count=0,
+                    min_value=None,
+                    max_value=None,
+                    distinct_values=None,
+                    boolean=True,
+                )
+            )
+        return stats
 
     def apply_attribute_mapping(self, layer_id: uuid.UUID, mappings: dict[str, str | None]) -> int:
         features = self.list_features(layer_id)

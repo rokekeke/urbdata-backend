@@ -17,11 +17,16 @@ from app.api.v1.schemas.layer import (
     LayerAttributesOut,
     LayerOut,
     QuadrasDeriveOut,
+    RepresentationFieldOut,
 )
 from app.domain.analysis.exceptions import (
     DuplicateLayerError,
     ProjectNotFoundError,
     RequiredLayerMissingError,
+)
+from app.domain.cartography.representation_options import (
+    compatible_indicator_codes,
+    recommend_mode,
 )
 from app.domain.text_encoding import fix_geojson_feature_properties
 from app.infrastructure.database.models.layer import LayerType
@@ -161,8 +166,10 @@ def list_layers(project_id: uuid.UUID, db: Session = Depends(get_db)) -> object:
 def get_layer_attributes(
     project_id: uuid.UUID, layer_id: uuid.UUID, db: Session = Depends(get_db)
 ) -> LayerAttributesOut:
-    sample = FeatureRepository(db).list_features(layer_id)[:20]
-    if not sample:
+    repository = FeatureRepository(db)
+    layer = repository.get_layer(layer_id)
+    sample = repository.list_features(layer_id)[:20]
+    if layer is None or not sample:
         raise HTTPException(
             status_code=404,
             detail=error_detail(
@@ -179,11 +186,37 @@ def get_layer_attributes(
             if str(value) not in values[key] and len(values[key]) < 5:
                 values[key].append(str(value))
 
+    # DOC-BE-004: aggregated in SQL, never scanning the layer in Python.
+    field_stats = repository.aggregate_representation_stats(layer_id)
+    representation_fields = []
+    for stats in field_stats:
+        recommendation = recommend_mode(stats)
+        representation_fields.append(
+            RepresentationFieldOut(
+                field=stats.field,
+                origin=stats.origin,
+                detected_type=recommendation.detected_type,
+                present_count=stats.present_count,
+                empty_count=stats.empty_count,
+                cardinality=stats.cardinality,
+                distinct_values=(
+                    list(stats.distinct_values) if stats.distinct_values is not None else None
+                ),
+                min_value=stats.min_value,
+                max_value=stats.max_value,
+                recommended_mode=recommendation.recommended_mode,
+                unsuitable_reason=recommendation.unsuitable_reason,
+            )
+        )
+
     return LayerAttributesOut(
         layer_id=layer_id,
         source_fields=sorted(fields),
         sample_values=values,
         suggested_mapping={},
+        feature_count=layer.feature_count,
+        fields=representation_fields,
+        compatible_indicators=list(compatible_indicator_codes(layer.layer_type.value)),
     )
 
 
