@@ -1,4 +1,5 @@
 import type { ExpressionSpecification } from "maplibre-gl";
+import type { FeatureCollection } from "geojson";
 import type { LayerStyleConfig } from "./types";
 
 export function compileFillColor(layer: LayerStyleConfig): string | ExpressionSpecification {
@@ -10,6 +11,20 @@ export function compileFillColor(layer: LayerStyleConfig): string | ExpressionSp
   }
 
   const [min, max] = layer.range ?? [0, 100];
+  if (layer.mode === "diverging") {
+    const midpoint = min + (max - min) / 2;
+    return [
+      "interpolate",
+      ["linear"],
+      ["to-number", ["get", layer.representation], midpoint],
+      min,
+      layer.color,
+      midpoint,
+      "#f4f2ed",
+      max,
+      layer.secondaryColor,
+    ] as ExpressionSpecification;
+  }
   return [
     "interpolate",
     ["linear"],
@@ -27,3 +42,31 @@ export function dashArray(style: LayerStyleConfig["lineStyle"]): number[] | unde
   return undefined;
 }
 
+export function resolveLayerPresentation(
+  layer: LayerStyleConfig,
+  collection: FeatureCollection | undefined,
+): LayerStyleConfig {
+  if (!collection || layer.representation === "single") return layer;
+  const values = collection.features
+    .map((feature) => feature.properties?.[layer.representation])
+    .filter((value) => value !== null && value !== undefined && value !== "");
+
+  if (layer.mode === "categorical" && !layer.categories && layer.palette?.length) {
+    const palette = layer.palette;
+    const distinct = [...new Set(values.map(String))].sort((left, right) => left.localeCompare(right, "pt-BR"));
+    return {
+      ...layer,
+      categories: Object.fromEntries(
+        distinct.map((value, index) => [value, palette[index % palette.length]]),
+      ),
+    };
+  }
+
+  if ((layer.mode === "sequential" || layer.mode === "diverging") && !layer.range) {
+    const numeric = values
+      .map(Number)
+      .filter((value) => Number.isFinite(value));
+    if (numeric.length > 0) return { ...layer, range: [Math.min(...numeric), Math.max(...numeric)] };
+  }
+  return layer;
+}

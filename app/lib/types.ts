@@ -1,3 +1,5 @@
+import type { components } from "./api/schema";
+
 export type WorkspaceSection =
   | "visao-geral"
   | "dados"
@@ -6,9 +8,10 @@ export type WorkspaceSection =
   | "documentacao";
 
 export type GeometryKind = "polygon" | "line" | "point";
-export type RepresentationMode = "single" | "categorical" | "sequential";
+export type RepresentationMode = components["schemas"]["RepresentationMode"];
 export type LineStyle = "solid" | "dashed" | "dotted";
-export type BasemapId = "none" | "osm";
+export type BasemapId = string;
+export type MapViewport = components["schemas"]["Viewport"];
 
 export interface RepresentationOption {
   value: string;
@@ -16,6 +19,10 @@ export interface RepresentationOption {
   type: "text" | "number";
   unit?: string;
   source: "source" | "mapped" | "indicator";
+  recommendedMode?: RepresentationMode;
+  distinctValues?: string[];
+  range?: [number, number];
+  unavailableReason?: string;
 }
 
 export interface LayerStyleConfig {
@@ -27,6 +34,7 @@ export interface LayerStyleConfig {
   opacity: number;
   color: string;
   secondaryColor: string;
+  palette?: string[];
   strokeColor: string;
   strokeWidth: number;
   lineStyle: LineStyle;
@@ -35,5 +43,9 @@ export interface LayerStyleConfig {
   representationOptions: RepresentationOption[];
   categories?: Record<string, string>;
   range?: [number, number];
+  layerType?: components["schemas"]["LayerType"];
+  projectVersionId?: string;
+  featureCount?: number;
+  status?: components["schemas"]["LayerStatus"];
+  sourceFilename?: string | null;
 }
-
