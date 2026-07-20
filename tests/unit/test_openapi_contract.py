@@ -33,7 +33,10 @@ class TestOpenAPIContract:
             success = [
                 body
                 for status, body in operation["responses"].items()
-                if status.startswith("2")
+                # 204 No Content is structurally bodyless (RFC 9110) - FastAPI
+                # correctly omits `content` for it, unlike a 200 that simply
+                # forgot to declare a response_model.
+                if status.startswith("2") and status != "204"
             ]
             for body in success:
                 content = body.get("content", {})

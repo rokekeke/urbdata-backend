@@ -25,9 +25,12 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.domain.analysis.exceptions import ProjectVersionNotFoundError
 from app.domain.cartography.contextual_validation import LayerContext
 from app.domain.cartography.document import MapDocumentConfig
-from app.domain.cartography.exceptions import MapDocumentContextError
+from app.domain.cartography.exceptions import (
+    MapDocumentContextError,
+    MapDocumentRevisionConflictError,
+)
 from app.domain.cartography.representation_options import FieldOrigin, FieldStats
-from app.infrastructure.database.models import Project, ProjectVersion
+from app.infrastructure.database.models import MapDocument, Project, ProjectVersion
 from app.infrastructure.database.repositories.feature_repository import FeatureRepository
 from app.infrastructure.database.repositories.map_document_repository import (
     MapDocumentRepository,
@@ -204,6 +207,153 @@ class TestCreate:
                 )
 
             assert MapDocumentRepository(session).list_for_version(version_id) == []
+
+
+class TestUpdate:
+    def test_successful_update_increments_revision_and_persists_changes(self) -> None:
+        Session = _session_factory()
+        with Session() as session:
+            _, version_id = _new_project_with_version(session)
+            repo = MapDocumentRepository(session)
+            document = repo.create(
+                project_version_id=version_id,
+                name="Original",
+                config=_sample_config(),
+                layer_contexts=_permissive_contexts(),
+            )
+            new_payload = _fixture_payload()
+            new_payload["title"] = "Titulo atualizado"
+            new_config = MapDocumentConfig.model_validate(new_payload)
+
+            updated = repo.update(
+                document,
+                expected_revision=1,
+                name="Renomeado",
+                config=new_config,
+                layer_contexts=_permissive_contexts(),
+            )
+
+            assert updated.revision == 2
+            assert updated.name == "Renomeado"
+            assert updated.config["title"] == "Titulo atualizado"
+
+        # Fresh session/query - proves the write really committed.
+        with Session() as session:
+            reloaded = session.get(type(document), document.id)
+            assert reloaded is not None
+            assert reloaded.revision == 2
+            assert reloaded.name == "Renomeado"
+
+    def test_stale_revision_is_rejected_and_row_is_untouched(self) -> None:
+        Session = _session_factory()
+        with Session() as session:
+            _, version_id = _new_project_with_version(session)
+            repo = MapDocumentRepository(session)
+            document = repo.create(
+                project_version_id=version_id,
+                name="Original",
+                config=_sample_config(),
+                layer_contexts=_permissive_contexts(),
+            )
+
+            with pytest.raises(MapDocumentRevisionConflictError) as excinfo:
+                repo.update(
+                    document,
+                    expected_revision=999,
+                    name="Nao deveria aplicar",
+                    config=_sample_config(),
+                    layer_contexts=_permissive_contexts(),
+                )
+
+            assert excinfo.value.context == {
+                "document_id": str(document.id),
+                "expected_revision": 999,
+                "current_revision": 1,
+            }
+            # `document` was refreshed in place to the true current state -
+            # the caller (route, 4.6) already holds what belongs in the
+            # 409 body without a second query.
+            assert document.revision == 1
+            assert document.name == "Original"
+
+        with Session() as session:
+            reloaded = session.get(type(document), document.id)
+            assert reloaded is not None
+            assert reloaded.revision == 1
+            assert reloaded.name == "Original"
+
+    def test_contextual_violation_is_rejected_and_row_is_untouched(self) -> None:
+        Session = _session_factory()
+        with Session() as session:
+            _, version_id = _new_project_with_version(session)
+            repo = MapDocumentRepository(session)
+            document = repo.create(
+                project_version_id=version_id,
+                name="Original",
+                config=_sample_config(),
+                layer_contexts=_permissive_contexts(),
+            )
+            broken_contexts = _permissive_contexts()
+            del broken_contexts[uuid.UUID(LAYER_1_ID)]
+
+            with pytest.raises(MapDocumentContextError):
+                repo.update(
+                    document,
+                    expected_revision=1,
+                    name="Nao deveria aplicar",
+                    config=_sample_config(),
+                    layer_contexts=broken_contexts,
+                )
+
+        with Session() as session:
+            reloaded = session.get(type(document), document.id)
+            assert reloaded is not None
+            assert reloaded.revision == 1
+            assert reloaded.name == "Original"
+
+    def test_concurrent_writers_only_one_wins(self) -> None:
+        """Two independent sessions both start from revision=1 - the real
+        hazard optimistic concurrency exists to prevent (a Python-side
+        read-then-compare would let both "pass"). The atomic
+        `UPDATE ... WHERE revision = ...` must let exactly one through."""
+        Session = _session_factory()
+        with Session() as setup_session:
+            _, version_id = _new_project_with_version(setup_session)
+            document_id = MapDocumentRepository(setup_session).create(
+                project_version_id=version_id,
+                name="Original",
+                config=_sample_config(),
+                layer_contexts=_permissive_contexts(),
+            ).id
+
+        with Session() as session_a, Session() as session_b:
+            document_a = session_a.get(MapDocument, document_id)
+            document_b = session_b.get(MapDocument, document_id)
+            assert document_a is not None and document_b is not None
+
+            MapDocumentRepository(session_a).update(
+                document_a,
+                expected_revision=1,
+                name="Vencedor",
+                config=_sample_config(),
+                layer_contexts=_permissive_contexts(),
+            )
+
+            with pytest.raises(MapDocumentRevisionConflictError) as excinfo:
+                MapDocumentRepository(session_b).update(
+                    document_b,
+                    expected_revision=1,
+                    name="Perdedor",
+                    config=_sample_config(),
+                    layer_contexts=_permissive_contexts(),
+                )
+            assert excinfo.value.context["current_revision"] == 2
+
+        with Session() as session:
+            final = session.get(MapDocument, document_id)
+            assert final is not None
+            assert final.revision == 2
+            assert final.name == "Vencedor"
 
 
 class TestListForVersion:
@@ -384,3 +534,208 @@ class TestBuildLayerContextsAndCreateEndToEnd:
 
             violation_paths = [v["path"] for v in excinfo.value.context["violations"]]
             assert "layers[0].interaction.feature_panel.title_field" in violation_paths
+
+
+def _upload_lote_layer_for_quadras(client: TestClient, project_id: str) -> str:
+    """Two adjacent Lote features sharing quadra_id='Q1' - the minimum
+    input `derive_quadras_layer` needs to dissolve one quadra polygon."""
+    square_a = [[
+        [-52.002, -27.001], [-52.000, -27.001], [-52.000, -26.999],
+        [-52.002, -26.999], [-52.002, -27.001],
+    ]]
+    square_b = [[
+        [-52.000, -27.001], [-51.998, -27.001], [-51.998, -26.999],
+        [-52.000, -26.999], [-52.000, -27.001],
+    ]]
+    response = client.post(
+        f"/v1/projects/{project_id}/layers",
+        data={"layer_type": "territorio"},
+        files={
+            "file": (
+                "territorio.geojson",
+                json.dumps(
+                    {
+                        "type": "FeatureCollection",
+                        "features": [
+                            {
+                                "type": "Feature",
+                                "geometry": {"type": "Polygon", "coordinates": square_a},
+                                "properties": {"macro": "Lote", "quadra": "Q1"},
+                            },
+                            {
+                                "type": "Feature",
+                                "geometry": {"type": "Polygon", "coordinates": square_b},
+                                "properties": {"macro": "Lote", "quadra": "Q1"},
+                            },
+                        ],
+                    }
+                ).encode(),
+                "application/geo+json",
+            )
+        },
+    )
+    assert response.status_code == 201, response.text
+    layer_id = str(response.json()["id"])
+
+    mapping_response = client.patch(
+        f"/v1/projects/{project_id}/layers/{layer_id}/attributes",
+        json={"mappings": {"macroarea": "macro", "quadra_id": "quadra"}},
+    )
+    assert mapping_response.status_code == 200, mapping_response.text
+    return layer_id
+
+
+def _derive_quadras(client: TestClient, project_id: str) -> str:
+    response = client.post(f"/v1/projects/{project_id}/layers/quadras/derive")
+    assert response.status_code == 200, response.text
+    return str(response.json()["layer_id"])
+
+
+def _minimal_single_layer_config(layer_id: str) -> MapDocumentConfig:
+    """The simplest possible valid document: one layer, source=none, no
+    field or indicator reference at all - just enough to prove layer_id
+    membership on its own (used by the quadras re-derivation trap
+    scenario, 4.5). Reuses the fixture's second layer, already
+    source=none/mode=single with the feature_panel disabled."""
+    payload = _fixture_payload()
+    layer = payload["layers"][1]
+    layer["layer_id"] = layer_id
+    payload["layers"] = [layer]
+    return MapDocumentConfig.model_validate(payload)
+
+
+class TestDelete:
+    def test_deletes_the_row(self) -> None:
+        Session = _session_factory()
+        with Session() as session:
+            _, version_id = _new_project_with_version(session)
+            repo = MapDocumentRepository(session)
+            document = repo.create(
+                project_version_id=version_id,
+                name="Para apagar",
+                config=_sample_config(),
+                layer_contexts=_permissive_contexts(),
+            )
+            document_id = document.id
+
+            repo.delete(document)
+
+            assert repo.list_for_version(version_id) == []
+
+        with Session() as session:
+            assert session.get(MapDocument, document_id) is None
+
+    def test_delete_does_not_affect_other_documents_of_the_same_version(self) -> None:
+        Session = _session_factory()
+        with Session() as session:
+            _, version_id = _new_project_with_version(session)
+            repo = MapDocumentRepository(session)
+            keep = repo.create(
+                project_version_id=version_id,
+                name="Mantido",
+                config=_sample_config(),
+                layer_contexts=_permissive_contexts(),
+            )
+            remove = repo.create(
+                project_version_id=version_id,
+                name="Removido",
+                config=_sample_config(),
+                layer_contexts=_permissive_contexts(),
+            )
+
+            repo.delete(remove)
+
+            remaining = repo.list_for_version(version_id)
+            assert [document.id for document in remaining] == [keep.id]
+
+
+class TestGetWithIntegrityWarnings:
+    def test_healthy_document_has_no_warnings(self) -> None:
+        with TestClient(create_app()) as client:
+            project_id = str(
+                client.post("/v1/projects", json={"name": "Diagnostico saudavel"}).json()["id"]
+            )
+            layer_id = _upload_territorio_layer_with_quadra_id(client, project_id)
+
+        Session = _session_factory()
+        with Session() as session:
+            version_id = ProjectRepository(session).current_version_id(uuid.UUID(project_id))
+            config = _single_layer_config(layer_id)
+            contexts = build_layer_contexts(FeatureRepository(session), version_id, config)
+            document = MapDocumentRepository(session).create(
+                project_version_id=version_id,
+                name="Documento saudavel",
+                config=config,
+                layer_contexts=contexts,
+            )
+
+            result = MapDocumentRepository(session).get_with_integrity_warnings(
+                uuid.UUID(project_id), document.id, FeatureRepository(session)
+            )
+
+            assert result is not None
+            found_document, warnings = result
+            assert found_document.id == document.id
+            assert warnings == []
+
+    def test_returns_none_for_a_document_that_does_not_exist(self) -> None:
+        Session = _session_factory()
+        with Session() as session:
+            project_id, _ = _new_project_with_version(session)
+
+            result = MapDocumentRepository(session).get_with_integrity_warnings(
+                project_id, uuid.uuid4(), FeatureRepository(session)
+            )
+
+            assert result is None
+
+    def test_quadras_re_derivation_orphans_the_reference_without_breaking_the_read(
+        self,
+    ) -> None:
+        """The concrete trap ADR 014 Decisao 8 decided NOT to fix at the
+        source: `POST /layers/quadras/derive` deletes and recreates the
+        QUADRAS layer with a brand-new id every call (ADR 009). A document
+        saved against the first derivation is orphaned by the second -
+        this proves the read-time diagnostic catches it generically,
+        without any quadras-specific code."""
+        with TestClient(create_app()) as client:
+            project_id = str(
+                client.post(
+                    "/v1/projects", json={"name": "Armadilha de quadras"}
+                ).json()["id"]
+            )
+            _upload_lote_layer_for_quadras(client, project_id)
+            first_quadras_layer_id = _derive_quadras(client, project_id)
+
+        Session = _session_factory()
+        with Session() as session:
+            version_id = ProjectRepository(session).current_version_id(uuid.UUID(project_id))
+            config = _minimal_single_layer_config(first_quadras_layer_id)
+            contexts = build_layer_contexts(FeatureRepository(session), version_id, config)
+            assert uuid.UUID(first_quadras_layer_id) in contexts  # resolves before re-derive
+
+            document = MapDocumentRepository(session).create(
+                project_version_id=version_id,
+                name="Referencia a quadra",
+                config=config,
+                layer_contexts=contexts,
+            )
+            document_id = document.id
+
+        with TestClient(create_app()) as client:
+            second_quadras_layer_id = _derive_quadras(client, project_id)
+        assert second_quadras_layer_id != first_quadras_layer_id
+
+        with Session() as session:
+            result = MapDocumentRepository(session).get_with_integrity_warnings(
+                uuid.UUID(project_id), document_id, FeatureRepository(session)
+            )
+
+            assert result is not None
+            found_document, warnings = result
+            # GET never fails and never rewrites the stale reference.
+            assert found_document.id == document_id
+            assert found_document.config["layers"][0]["layer_id"] == first_quadras_layer_id
+            assert len(warnings) == 1
+            assert warnings[0].layer_id == uuid.UUID(first_quadras_layer_id)
+            assert warnings[0].code == "layer_not_in_version"

@@ -11,3 +11,16 @@ class MapDocumentContextError(AnalysisError):
     structural errors, item 2)."""
 
     code = "map_document_context_invalid"
+
+
+class MapDocumentRevisionConflictError(AnalysisError):
+    """PUT sent a stale `revision` (ADR 014, Decisao 4/8) - optimistic
+    concurrency conflict detected by an atomic `UPDATE ... WHERE id = ...
+    AND revision = ...` (never a read-then-compare in Python, which would
+    be a lost-update race under concurrent writers). `context` carries
+    `document_id`/`expected_revision`/`current_revision`; the caller
+    (route, 4.6) already holds the document object - refreshed in place
+    to the true current row state before this is raised - and returns it
+    as the 409 body."""
+
+    code = "map_document_revision_conflict"

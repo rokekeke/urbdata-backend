@@ -124,6 +124,40 @@ def validate_document_context(
     return violations
 
 
+@dataclass(frozen=True, slots=True)
+class IntegrityWarning:
+    layer_id: uuid.UUID
+    code: str
+    message: str
+
+
+def compute_integrity_warnings(
+    config: MapDocumentConfig, layers: dict[uuid.UUID, LayerContext]
+) -> list[IntegrityWarning]:
+    """Read-time diagnostic (ADR 014, Decisao 8): the exact same
+    compatibility rules `validate_document_context` enforces at write
+    time (4.3), reused here as information only - GET never fails and
+    never silently corrects a stale reference (regra 2 do projeto), it
+    just reports what has rotted since the document was saved (deleted
+    layer, quadras re-derived with a new id - ADR 009, remapped field,
+    catalog change). Grouped by the owning `layer_id` - a reader wants
+    "what's wrong with this layer", not the write-time field path."""
+    violations = validate_document_context(config, layers)
+    warnings: list[IntegrityWarning] = []
+    for index, layer in enumerate(config.layers):
+        prefix = f"layers[{index}]."
+        for violation in violations:
+            if violation.path.startswith(prefix):
+                warnings.append(
+                    IntegrityWarning(
+                        layer_id=layer.layer_id,
+                        code=violation.code,
+                        message=violation.message,
+                    )
+                )
+    return warnings
+
+
 def _field_violation(path: str, field: str) -> ContextViolation:
     return ContextViolation(
         path=path,

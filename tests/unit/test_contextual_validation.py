@@ -1,6 +1,7 @@
 """Pure-logic tests for write-time contextual validation (ADR 014,
-Decisao 3/8, item 4.3). No DB - `LayerContext` is synthetic here;
-`build_layer_contexts` (which does the real querying) is covered by
+Decisao 3/8, item 4.3) and the read-time integrity diagnostic (item 4.5).
+No DB - `LayerContext` is synthetic here; `build_layer_contexts` (which
+does the real querying) is covered by
 `tests/integration/test_map_document_repository.py`.
 """
 
@@ -11,6 +12,7 @@ from typing import Any
 
 from app.domain.cartography.contextual_validation import (
     LayerContext,
+    compute_integrity_warnings,
     references_property_field,
     validate_document_context,
 )
@@ -413,3 +415,45 @@ class TestReferencesPropertyField:
         config = _config()
 
         assert references_property_field(config.layers[0]) is True
+
+
+class TestIntegrityWarnings:
+    """Read-time diagnostic (item 4.5, ADR 014 Decisao 8): same violation
+    codes as write-time validation, grouped by the owning layer_id."""
+
+    def test_healthy_document_has_no_warnings(self) -> None:
+        assert compute_integrity_warnings(_config(), _full_context()) == []
+
+    def test_orphaned_layer_produces_a_warning_grouped_by_its_id(self) -> None:
+        contexts = _full_context()
+        del contexts[LAYER_1_ID]
+
+        warnings = compute_integrity_warnings(_config(), contexts)
+
+        assert len(warnings) == 1
+        assert warnings[0].layer_id == LAYER_1_ID
+        assert warnings[0].code == "layer_not_in_version"
+
+    def test_incompatible_indicator_produces_two_warnings_same_layer(self) -> None:
+        # Same indicator drives both representation and a feature_panel
+        # table field in the fixture - both surface, both attributed to
+        # layer 0.
+        contexts = _full_context()
+        contexts[LAYER_0_ID] = LayerContext(
+            layer_type="quadras", fields={"quadra_id": _text_field_stats()}
+        )
+
+        warnings = compute_integrity_warnings(_config(), contexts)
+
+        assert len(warnings) == 2
+        assert all(w.layer_id == LAYER_0_ID for w in warnings)
+        assert all(w.code == "indicator_incompatible_with_layer" for w in warnings)
+
+    def test_never_raises_on_a_broken_document(self) -> None:
+        # The whole point of 4.1(b): GET never fails, even with every
+        # layer missing.
+        warnings = compute_integrity_warnings(_config(), {})
+
+        assert len(warnings) == 2
+        assert {w.layer_id for w in warnings} == {LAYER_0_ID, LAYER_1_ID}
+        assert all(w.code == "layer_not_in_version" for w in warnings)

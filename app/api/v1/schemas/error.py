@@ -30,3 +30,9 @@ NOT_FOUND: ErrorResponses = {404: {"model": ErrorEnvelopeOut}}
 UNPROCESSABLE: ErrorResponses = {422: {"model": ErrorEnvelopeOut}}
 BAD_REQUEST: ErrorResponses = {400: {"model": ErrorEnvelopeOut}}
 TOO_LARGE: ErrorResponses = {413: {"model": ErrorEnvelopeOut}}
+# First 409 in the API (MapDocument optimistic-concurrency conflict, ADR 014
+# Decisao 4/8): stays inside the same envelope as every other 4xx -
+# `context.current_document` carries the current MapDocumentOut so the
+# client gets it without a second round-trip, without special-casing this
+# route in the OpenAPI contract guard (test_openapi_contract.py).
+CONFLICT: ErrorResponses = {409: {"model": ErrorEnvelopeOut}}

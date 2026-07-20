@@ -5,6 +5,8 @@
 - Emenda 19/07/2026: Decisao 7 (`feature_panel`, nota Obsidian 33)
 - Emenda 19/07/2026: Decisao 8 (CRUD, rotas e leitura de referencias
   quebradas - checkpoint 4.1, nota Obsidian 38)
+- Emenda 20/07/2026: item 4.6 implementado (rotas HTTP) - esclarecimento do
+  formato do 409 da Decisao 4 (ver abaixo)
 - Contexto: aba Documentacao (nota 24), backlog DOC-BE-001..010 (nota 25 /
   `docs/backlog/map-documentation-backend.md`), caminho definitivo do MVP
   (nota 28), analise do codigo-fonte do Kepler.gl (notas 31/32).
@@ -147,6 +149,15 @@ cardinalidade categorica excedida rejeita qualquer modo alem de `single`;
   servidor a cada `PUT`; o cliente envia a revisao esperada; divergencia
   responde `409` com o documento atual no corpo (o cliente decide como
   reconciliar). Sem autosave no servidor: so gravacoes explicitas.
+  **Esclarecimento (item 4.6, 20/07/2026)**: "no corpo" implementado como
+  `detail.context.current_document` (um `MapDocumentOut` completo) dentro
+  do envelope unico `{error, message, context}` - nao um `MapDocumentOut`
+  cru substituindo o envelope. Motivo: o guard `test_openapi_contract.py`
+  (Fase 1) ja exige que **todo** 4xx declarado use `ErrorEnvelopeOut`, sem
+  excecao por rota; aninhar o documento em `context` preserva essa garantia
+  automatizada para 100% das rotas (inclusive esta, o primeiro 409 da API)
+  sem abrir um precedente de "response_model variavel por status", e o
+  cliente ainda recebe o documento inteiro sem uma segunda consulta.
 - Multiplos documentos por versao, sem limite rigido na v1.
 
 ## Decisao 5 - Catalogo de mapas-base v1
@@ -315,6 +326,17 @@ DELETE /v1/projects/{project_id}/documents/{document_id}
 resto da API e para a checagem de pertencimento (404 se o documento nao
 pertence ao projeto), nao porque o id do documento precise dele para ser
 unico.
+
+**Implementado 20/07/2026** (item 4.6, `app/api/v1/routes/map_documents.py`
++ `app/api/v1/schemas/map_document.py`): as 5 rotas acima, mais o novo
+fragmento `CONFLICT` (409) em `app/api/v1/schemas/error.py` - o primeiro
+409 declarado na API. `DELETE` responde `204` sem corpo; isso exigiu um
+ajuste minimo no guard `test_openapi_contract.py` (que so conhecia 2xx
+com corpo) para tratar 204 como estruturalmente sem schema (RFC 9110), nao
+como uma operacao que esqueceu de declarar seu `response_model`. Testes de
+integracao HTTP em `tests/integration/test_map_documents_api.py` (item
+4.7) cobrem o checklist da nota 39 completo, incluindo a armadilha de
+quadras (ADR 009) alcancada via `GET` real, nao so via repositorio.
 
 ### Leitura com referencia quebrada - diagnostico, nunca falha
 
