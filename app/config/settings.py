@@ -10,6 +10,14 @@ class Settings(BaseSettings):
     app_name: str = "URBDATA API"
     environment: str = "local"
     api_v1_prefix: str = "/v1"
+    # WARNING: this default points at the SHARED dev database (real
+    # projects, real data - see Obsidian nota 09). It exists for local
+    # `uvicorn` runs, never for tests. Integration tests must set
+    # URBDATA_DATABASE_URL explicitly (tests/integration/conftest.py
+    # enforces this) - URBDATA_TEST_DATABASE_URL is a DIFFERENT variable
+    # that some test files also read only to decide whether to skip, and
+    # confusing the two once already leaked test data into the shared
+    # database (nota 37, 2026-07-19).
     database_url: str = "postgresql+psycopg://urbdata:urbdata@localhost:5432/urbdata"
     max_upload_size_mb: int = 5
     storage_path: str = "./tmp/uploads"

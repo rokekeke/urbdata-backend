@@ -35,7 +35,7 @@ def test_fresh_and_stamped_legacy_database_converge_to_head() -> None:
     with engine.connect() as connection:
         assert (
             connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-            == "0007"
+            == "0008"
         )
     columns = {column["name"] for column in inspect(engine).get_columns("indicator_results")}
     assert {
@@ -62,5 +62,5 @@ def test_fresh_and_stamped_legacy_database_converge_to_head() -> None:
     with engine.connect() as connection:
         assert (
             connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-            == "0007"
+            == "0008"
         )

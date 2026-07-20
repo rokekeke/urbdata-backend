@@ -1,5 +1,4 @@
 import json
-import os
 from typing import Any
 
 import pytest
@@ -7,12 +6,9 @@ from fastapi.testclient import TestClient
 
 from app.main import create_app
 
-TEST_DATABASE_URL = os.getenv("URBDATA_TEST_DATABASE_URL")
-
-pytestmark = pytest.mark.skipif(
-    not TEST_DATABASE_URL,
-    reason="URBDATA_TEST_DATABASE_URL is required for database integration tests",
-)
+# tests/integration/conftest.py guarantees URBDATA_TEST_DATABASE_URL is set
+# and mirrored into URBDATA_DATABASE_URL before this module is even
+# imported - aborting the whole session otherwise (Obsidian nota 37).
 
 
 def _feature_collection(features: list[dict[str, Any]]) -> bytes:
