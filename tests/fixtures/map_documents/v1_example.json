@@ -1,0 +1,75 @@
+{
+  "schema_version": "1",
+  "name": "composicao-exemplo-v1",
+  "title": "Diagnostico territorial - exemplo ADR 014",
+  "basemap_id": "positron",
+  "viewport": {
+    "longitude": -48.5228,
+    "latitude": -27.5854,
+    "zoom": 16.5,
+    "bearing": 0,
+    "pitch": 0
+  },
+  "layers": [
+    {
+      "layer_id": "0b2f6d0e-49f2-4a11-9f2d-6a5f5b7f2c01",
+      "visible": true,
+      "representation": {
+        "source": "indicator",
+        "indicator_code": "lots.frontage_length",
+        "field": null,
+        "mode": "sequential",
+        "scale": "quantile",
+        "classes": 5,
+        "stops": null,
+        "null_behavior": "transparent"
+      },
+      "style": {
+        "fill": {
+          "color": null,
+          "palette": ["#f7fbff", "#c6dbef", "#6baed6", "#2171b5", "#08306b"],
+          "opacity": 0.8
+        },
+        "stroke": {
+          "color": "#1a1a1a",
+          "width_px": 0.5,
+          "style": "solid",
+          "opacity": 1.0
+        },
+        "null_color": null,
+        "labels": null
+      },
+      "interaction": {
+        "tooltip_fields": ["quadra_id"],
+        "selectable": true,
+        "filters": null
+      }
+    },
+    {
+      "layer_id": "3c9a1f7b-2d64-4e08-8a4e-9d1c0b3e5f02",
+      "visible": true,
+      "representation": {
+        "source": "none",
+        "field": null,
+        "indicator_code": null,
+        "mode": "single",
+        "scale": null,
+        "classes": null,
+        "stops": null,
+        "null_behavior": "transparent"
+      },
+      "style": {
+        "fill": {"color": null, "palette": null, "opacity": 0},
+        "stroke": {
+          "color": "#d95f02",
+          "width_px": 2.0,
+          "style": "dashed",
+          "opacity": 1.0
+        },
+        "null_color": null,
+        "labels": null
+      },
+      "interaction": {"tooltip_fields": [], "selectable": true, "filters": null}
+    }
+  ]
+}
