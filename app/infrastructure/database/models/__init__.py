@@ -13,7 +13,7 @@ from app.infrastructure.database.models.analysis import (
     IndicatorResult,
     ReferenceParameter,
 )
-from app.infrastructure.database.models.export import Export
+from app.infrastructure.database.models.export import Export, ExportStatus
 from app.infrastructure.database.models.feature import Feature, RelationMethod
 from app.infrastructure.database.models.layer import (
     LayerAttributeMapping,
@@ -54,5 +54,6 @@ __all__ = [
     "IndicatorClassification",
     "StylePreset",
     "Export",
+    "ExportStatus",
     "MapDocument",
 ]

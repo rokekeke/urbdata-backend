@@ -35,7 +35,7 @@ def test_fresh_and_stamped_legacy_database_converge_to_head() -> None:
     with engine.connect() as connection:
         assert (
             connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-            == "0008"
+            == "0009"
         )
     columns = {column["name"] for column in inspect(engine).get_columns("indicator_results")}
     assert {
@@ -56,11 +56,13 @@ def test_fresh_and_stamped_legacy_database_converge_to_head() -> None:
         "road_status",
         "ca_max",
     } <= feature_columns
+    export_columns = {column["name"] for column in inspect(engine).get_columns("exports")}
+    assert {"status", "completed_at", "error"} <= export_columns
 
     command.downgrade(config, "0001")
     command.upgrade(config, "head")
     with engine.connect() as connection:
         assert (
             connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-            == "0008"
+            == "0009"
         )

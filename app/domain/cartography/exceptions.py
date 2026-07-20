@@ -24,3 +24,14 @@ class MapDocumentRevisionConflictError(AnalysisError):
     as the 409 body."""
 
     code = "map_document_revision_conflict"
+
+
+class BasemapNotExportableError(AnalysisError):
+    """The document's `basemap_id` resolves in the catalog (Pydantic
+    already checked that, `document.py`) but is flagged
+    `export_allowed=False` (ADR 014 Decisao 5 - reserved for a provider
+    whose license/availability doesn't guarantee reproducibility in an
+    archived artifact; no catalog entry sets this today, but the field
+    exists precisely for this check, wired up here in Fase 5)."""
+
+    code = "basemap_not_exportable"

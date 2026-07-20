@@ -7,6 +7,8 @@
   quebradas - checkpoint 4.1, nota Obsidian 38)
 - Emenda 20/07/2026: item 4.6 implementado (rotas HTTP) - esclarecimento do
   formato do 409 da Decisao 4 (ver abaixo)
+- Emenda 20/07/2026: Decisao 6 (checkpoint 5.1, nota Obsidian 44) -
+  lifecycle de status e forma da interacao HTTP do export
 - Contexto: aba Documentacao (nota 24), backlog DOC-BE-001..010 (nota 25 /
   `docs/backlog/map-documentation-backend.md`), caminho definitivo do MVP
   (nota 28), analise do codigo-fonte do Kepler.gl (notas 31/32).
@@ -217,6 +219,47 @@ exports.config (JSONB)
   quebra o contrato.
 - Formato v1: PNG. Presets de prancha (A4/A3, DPI) aguardam definicao do
   urbanista - fora da v1.
+
+**Checkpoint 5.1 (20/07/2026, nota Obsidian 44) - lifecycle e interacao HTTP,
+resolvido com o usuario antes de codificar:**
+
+- **Status: 4 estados**, mesmo vocabulario de `AnalysisStatus`
+  (`pending`/`running`/`completed`/`failed`) - por consistencia com
+  `analysis_runs`, mesmo que `running` nao seja setado por nenhum caminho
+  de codigo na v1 (fica reservado para quando existir render server-side
+  ou fila real; nao e um estado morto por acidente, e uma decisao
+  deliberada de vocabulario).
+- **Duas chamadas HTTP separadas**, nao uma unica multipart: `POST
+  /documents/{id}/exports` congela o snapshot e cria a linha com
+  `status=pending`, devolve o id; um segundo endpoint (`POST
+  /exports/{id}/file`) recebe o PNG renderizado pelo cliente, arquiva via
+  `LocalStorage` e transiciona para `completed`. Motivo: preserva a
+  possibilidade de migrar para fila real depois (worker preenche
+  `file_path` e a transicao, sem o cliente re-enviar nada) sem redesenhar
+  o contrato - exatamente a garantia que este paragrafo ja prometia antes
+  de existir a especificacao operacional.
+- **Sem endpoint de listagem de exports por documento na v1** - so `POST`
+  (criar) e `GET` (item, por id). Mesmo padrao do `GET /runs` (Fase 0):
+  construir a listagem quando a necessidade for real, nao antecipada.
+  Aditivo, nao quebra nada adicionar depois.
+- **Exports que ficam `pending` para sempre (cliente nunca envia o PNG)
+  nao tem tratamento especial na v1** - sem TTL, sem limpeza automatica.
+  Mesmo espirito da retencao indefinida ja decidida para exports em
+  geral; um mecanismo de expiracao e complexidade sem necessidade
+  comprovada ainda (YAGNI).
+
+**Implementado 20/07/2026 (itens 5.2/5.3)**: migration `0009` adiciona
+`status`/`completed_at`/`error` a `exports` (sem `started_at`/
+`duration_ms` - nenhum caminho de codigo os define ainda).
+`app/domain/cartography/export_snapshot.py::build_export_snapshot` (pura,
+sem banco) monta o dict `exports.config` completo + checksum sha256 a
+partir do `MapDocumentConfig` (camadas copiadas por valor - ja concretas,
+nao exige recalcular breakpoints estatisticos) + parametros de imagem/
+renderer/legenda. `export_allowed` (Basemap, Decisao 5) finalmente
+conectado a um uso real: `BasemapNotExportableError` rejeita um mapa-base
+nao liberado para exportacao - nenhuma entrada do catalogo usa isso hoje,
+mas o campo deixa de ser um valor morto. Verificado com banco isolado
+(ciclo upgrade/downgrade/upgrade), banco compartilhado intocado.
 
 ## Decisao 7 - Painel informativo de feicao (feature_panel, nota 33)
 
