@@ -25,7 +25,14 @@ from app.domain.geospatial.layers import (
 from app.domain.geospatial.spatial_relations import SpatialRelation
 from app.domain.text_encoding import normalize_key
 from app.infrastructure.database.models.feature import Feature, RelationMethod
-from app.infrastructure.database.models.layer import LayerStatus, LayerType, ProjectLayer
+from app.infrastructure.database.models.layer import (
+    LayerAttributeMapping,
+    LayerStatus,
+    LayerType,
+    ProjectLayer,
+)
+from app.infrastructure.database.models.validation import ValidationIssue
+from app.infrastructure.database.models.version import ProjectVersion
 
 _TRUE_TOKENS = {"1", "true", "sim", "yes"}
 _FALSE_TOKENS = {"0", "false", "nao", "no"}
@@ -134,6 +141,59 @@ class FeatureRepository:
 
     def get_layer(self, layer_id: uuid.UUID) -> ProjectLayer | None:
         return self._session.get(ProjectLayer, layer_id)
+
+    def get_layer_for_project(
+        self, project_id: uuid.UUID, layer_id: uuid.UUID
+    ) -> ProjectLayer | None:
+        """`None` when the layer doesn't exist or belongs to another
+        project - same cross-tenant-blind pattern as
+        `MapDocumentRepository.get_for_project`."""
+        return (
+            self._session.query(ProjectLayer)
+            .join(ProjectVersion, ProjectLayer.project_version_id == ProjectVersion.id)
+            .filter(ProjectLayer.id == layer_id, ProjectVersion.project_id == project_id)
+            .first()
+        )
+
+    def delete_layer(self, layer: ProjectLayer) -> None:
+        """Hard delete of a layer and its features (Frente 3, nota 52).
+
+        Same unlink discipline `derive_quadras_layer` already applies when
+        replacing a derived QUADRAS layer, generalized: features in OTHER
+        layers pointing at this layer's features via
+        `parent_quadra_feature_id`/`parent_lote_feature_id` are unlinked
+        (never cascade-deleted - removing quadras must not remove lots),
+        and `validation_issues` rows keep their run history with the
+        layer/feature reference nulled. Already-persisted indicator
+        results and MapDocument configs are untouched by design:
+        `indicator_results.source_layers` stores names, not FKs, and a
+        stale `layer_id` in a document surfaces as an `integrity_warnings`
+        diagnostic on read (ADR 014, Decisao 8) instead of breaking.
+        """
+        feature_ids = self._session.query(Feature.id).filter(Feature.layer_id == layer.id)
+        self._session.query(Feature).filter(
+            Feature.parent_quadra_feature_id.in_(feature_ids)
+        ).update(
+            {"parent_quadra_feature_id": None, "relation_method": RelationMethod.UNRESOLVED},
+            synchronize_session=False,
+        )
+        self._session.query(Feature).filter(
+            Feature.parent_lote_feature_id.in_(feature_ids)
+        ).update({"parent_lote_feature_id": None}, synchronize_session=False)
+        self._session.query(ValidationIssue).filter(
+            ValidationIssue.feature_id.in_(feature_ids)
+        ).update({"feature_id": None}, synchronize_session=False)
+        self._session.query(ValidationIssue).filter(
+            ValidationIssue.layer_id == layer.id
+        ).update({"layer_id": None}, synchronize_session=False)
+        self._session.query(LayerAttributeMapping).filter(
+            LayerAttributeMapping.layer_id == layer.id
+        ).delete(synchronize_session=False)
+        self._session.query(Feature).filter(Feature.layer_id == layer.id).delete(
+            synchronize_session=False
+        )
+        self._session.delete(layer)
+        self._session.commit()
 
     def list_features(self, layer_id: uuid.UUID) -> list[Feature]:
         return list(self._session.query(Feature).filter(Feature.layer_id == layer_id).all())

@@ -24,6 +24,7 @@ from app.domain.analysis.exceptions import (
     ProjectNotFoundError,
     RequiredLayerMissingError,
 )
+from app.domain.attribute_suggestions import suggest_attribute_mapping
 from app.domain.cartography.representation_options import (
     compatible_indicator_codes,
     recommend_mode,
@@ -213,7 +214,7 @@ def get_layer_attributes(
         layer_id=layer_id,
         source_fields=sorted(fields),
         sample_values=values,
-        suggested_mapping={},
+        suggested_mapping=suggest_attribute_mapping(fields),
         feature_count=layer.feature_count,
         fields=representation_fields,
         compatible_indicators=list(compatible_indicator_codes(layer.layer_type.value)),
@@ -261,6 +262,29 @@ def derive_quadras_layer(project_id: uuid.UUID, db: Session = Depends(get_db)) -
         ) from exc
 
     return result
+
+
+@router.delete("/{layer_id}", status_code=204, responses={**NOT_FOUND})
+def delete_layer(
+    project_id: uuid.UUID, layer_id: uuid.UUID, db: Session = Depends(get_db)
+) -> None:
+    """Hard delete (Frente 3, nota 52): remove a camada e suas feicoes.
+    Feicoes de outras camadas que apontavam para estas (quadra/lote) sao
+    desvinculadas, nunca removidas em cascata; resultados ja persistidos e
+    documentos cartograficos ficam intactos - referencias orfas viram
+    `integrity_warnings` na leitura (ADR 014, Decisao 8)."""
+    repository = FeatureRepository(db)
+    layer = repository.get_layer_for_project(project_id, layer_id)
+    if layer is None:
+        raise HTTPException(
+            status_code=404,
+            detail=error_detail(
+                "layer_not_found",
+                "Camada nao encontrada neste projeto.",
+                {"layer_id": str(layer_id)},
+            ),
+        )
+    repository.delete_layer(layer)
 
 
 @router.get("/{layer_id}/geojson", response_model=GeoJSONFeatureCollectionOut)

@@ -40,6 +40,12 @@ class TestCatalogIndicatorsEndpoint:
         assert total_area["feature_key"] is None
         assert total_area["unit"] == "m2"
         assert total_area["display_name"].startswith(chr(0xC1) + "rea")
+        assert total_area["value_shape"] == "scalar"
+
+        quadras_stats = by_code["quadras.stats"]
+        assert quadras_stats["value_shape"] == "feature_compound"
+        area_by_category = by_code["territorial.area_by_category"]
+        assert area_by_category["value_shape"] == "category_breakdown"
 
     def test_sorted_by_theme_then_code(self) -> None:
         body = client.get("/v1/catalog/indicators").json()
