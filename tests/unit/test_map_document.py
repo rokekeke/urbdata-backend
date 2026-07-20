@@ -14,6 +14,8 @@ from pydantic import ValidationError
 
 from app.domain.cartography.document import (
     CATEGORICAL_CLASS_BLOCK_LIMIT,
+    FEATURE_PANEL_MAX_BLOCKS,
+    TABLE_FIELD_MAX,
     MapDocumentConfig,
     document_warnings,
     upcast_document,
@@ -30,6 +32,125 @@ def _fixture_payload() -> dict[str, Any]:
 def _layer(payload: dict[str, Any], index: int = 0) -> dict[str, Any]:
     layer: dict[str, Any] = payload["layers"][index]
     return layer
+
+
+def _panel(payload: dict[str, Any], index: int = 0) -> dict[str, Any]:
+    panel: dict[str, Any] = _layer(payload, index)["interaction"]["feature_panel"]
+    return panel
+
+
+class TestFeaturePanel:
+    """ADR 014, Decisao 7 (nota 33)."""
+
+    def _expect_error(self, payload: dict[str, Any], fragment: str) -> None:
+        with pytest.raises(ValidationError) as excinfo:
+            MapDocumentConfig.model_validate(payload)
+        assert fragment in str(excinfo.value)
+
+    def test_disabled_by_default_is_valid(self) -> None:
+        payload = _fixture_payload()
+        _panel(payload, 0).update(
+            {"enabled": False, "title_field": None, "width": "compact", "blocks": []}
+        )
+
+        document = MapDocumentConfig.model_validate(payload)
+
+        panel = document.layers[0].interaction.feature_panel
+        assert panel.enabled is False
+        assert panel.blocks == []
+
+    def test_fixture_panel_round_trips_with_text_and_table_blocks(self) -> None:
+        payload = _fixture_payload()
+
+        document = MapDocumentConfig.model_validate(payload)
+
+        panel = document.layers[0].interaction.feature_panel
+        assert panel.enabled is True
+        assert panel.width.value == "medium"
+        assert [block.type for block in panel.blocks] == ["text", "table"]
+
+    def test_text_block_with_project_level_indicator_is_rejected(self) -> None:
+        payload = _fixture_payload()
+        _panel(payload)["blocks"] = [
+            {
+                "type": "text",
+                "source": "indicator",
+                "field": "territorial.total_area",
+                "style": "body",
+            }
+        ]
+        self._expect_error(payload, "nao e por feicao")
+
+    def test_table_block_requires_at_least_one_field(self) -> None:
+        payload = _fixture_payload()
+        _panel(payload)["blocks"] = [{"type": "table", "layout": "key_value", "fields": []}]
+        self._expect_error(payload, "at least 1 item")
+
+    def test_text_format_rejects_decimals(self) -> None:
+        payload = _fixture_payload()
+        _panel(payload)["blocks"] = [
+            {
+                "type": "table",
+                "layout": "key_value",
+                "fields": [
+                    {
+                        "source": "property",
+                        "key": "quadra_id",
+                        "label": "Quadra",
+                        "format": {"type": "text", "decimals": 2},
+                    }
+                ],
+            }
+        ]
+        self._expect_error(payload, "decimals/prefix/suffix")
+
+    def test_duplicate_table_field_is_rejected(self) -> None:
+        payload = _fixture_payload()
+        field = {"source": "property", "key": "quadra_id", "label": "Quadra", "format": None}
+        _panel(payload)["blocks"] = [
+            {"type": "table", "layout": "key_value", "fields": [field, dict(field)]}
+        ]
+        self._expect_error(payload, "campo duplicado")
+
+    def test_too_many_blocks_is_rejected(self) -> None:
+        payload = _fixture_payload()
+        block = {"type": "text", "source": "property", "field": "quadra_id", "style": "body"}
+        _panel(payload)["blocks"] = [dict(block) for _ in range(FEATURE_PANEL_MAX_BLOCKS + 1)]
+        self._expect_error(payload, "at most")
+
+    def test_too_many_table_fields_is_rejected(self) -> None:
+        payload = _fixture_payload()
+        fields = [
+            {"source": "property", "key": f"campo_{i}", "label": f"Campo {i}", "format": None}
+            for i in range(TABLE_FIELD_MAX + 1)
+        ]
+        _panel(payload)["blocks"] = [
+            {"type": "table", "layout": "key_value", "fields": fields}
+        ]
+        self._expect_error(payload, "at most")
+
+    def test_unknown_block_type_is_rejected(self) -> None:
+        payload = _fixture_payload()
+        _panel(payload)["blocks"] = [{"type": "chart", "field": "quadra_id"}]
+        self._expect_error(payload, "chart")
+
+    def test_label_above_60_chars_is_rejected(self) -> None:
+        payload = _fixture_payload()
+        _panel(payload)["blocks"] = [
+            {
+                "type": "table",
+                "layout": "key_value",
+                "fields": [
+                    {
+                        "source": "property",
+                        "key": "quadra_id",
+                        "label": "x" * 61,
+                        "format": None,
+                    }
+                ],
+            }
+        ]
+        self._expect_error(payload, "at most 60")
 
 
 class TestValidDocuments:

@@ -19,7 +19,7 @@ invalid configuration reports code, message and field path.
 import re
 import uuid
 from enum import StrEnum
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -34,6 +34,17 @@ CATEGORICAL_CLASS_BLOCK_LIMIT = 32
 STOPS_MIN = 2
 STOPS_MAX = 12
 STROKE_WIDTH_MAX_PX = 20.0
+
+# Feature panel limits (ADR 014, Decisao 7 / nota 33): the panel never
+# carries free text - blocks reference fields/indicators, never a literal
+# user string - so these bounds are about clutter, not injection.
+FEATURE_PANEL_MAX_BLOCKS = 8
+TABLE_FIELD_MIN = 1
+TABLE_FIELD_MAX = 12
+FIELD_LABEL_MAX_LENGTH = 60
+FORMAT_PREFIX_MAX_LENGTH = 8
+FORMAT_SUFFIX_MAX_LENGTH = 16
+FORMAT_DECIMALS_MAX = 6
 
 _HEX_COLOR = re.compile(r"^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$")
 
@@ -106,6 +117,19 @@ def _require_hex(value: str | None) -> str | None:
     return value
 
 
+def _validate_por_feicao_indicator(indicator_code: str) -> None:
+    """Shared by Representation (Decisao 2) and the feature panel blocks
+    (Decisao 7): only per-feature indicators can be tied to one feature."""
+    presentation = PRESENTATIONS.get(indicator_code)
+    if presentation is None:
+        raise ValueError(f"indicador nao registrado: {indicator_code!r}")
+    if presentation.granularity is not IndicatorGranularity.POR_FEICAO:
+        raise ValueError(
+            f"indicador {indicator_code!r} nao e por feicao - "
+            "nao pode ser associado a uma feicao"
+        )
+
+
 class Viewport(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -140,14 +164,7 @@ class Representation(BaseModel):
                 raise ValueError("source=indicator exige 'indicator_code'")
             if self.field is not None:
                 raise ValueError("source=indicator nao aceita 'field'")
-            presentation = PRESENTATIONS.get(self.indicator_code)
-            if presentation is None:
-                raise ValueError(f"indicador nao registrado: {self.indicator_code!r}")
-            if presentation.granularity is not IndicatorGranularity.POR_FEICAO:
-                raise ValueError(
-                    f"indicador {self.indicator_code!r} nao e por feicao - "
-                    "nao pode ser representado no mapa"
-                )
+            _validate_por_feicao_indicator(self.indicator_code)
         else:  # NONE
             if self.field is not None or self.indicator_code is not None:
                 raise ValueError("source=none nao aceita 'field' nem 'indicator_code'")
@@ -248,11 +265,121 @@ class LayerStyle(BaseModel):
         return _require_hex(value)
 
 
+class FeaturePanelFieldSource(StrEnum):
+    """Origin of a feature-panel field - deliberately its own enum (not
+    RepresentationSource): a panel block never has a 'none' origin."""
+
+    PROPERTY = "property"
+    INDICATOR = "indicator"
+
+
+class TextBlockStyle(StrEnum):
+    BODY = "body"
+    SUBTITLE = "subtitle"
+
+
+class FeaturePanelWidth(StrEnum):
+    COMPACT = "compact"
+    MEDIUM = "medium"
+
+
+class FieldFormatType(StrEnum):
+    TEXT = "text"
+    NUMBER = "number"
+
+
+class FieldFormat(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: FieldFormatType
+    decimals: int | None = Field(default=None, ge=0, le=FORMAT_DECIMALS_MAX)
+    prefix: str | None = Field(default=None, min_length=1, max_length=FORMAT_PREFIX_MAX_LENGTH)
+    suffix: str | None = Field(default=None, min_length=1, max_length=FORMAT_SUFFIX_MAX_LENGTH)
+
+    @model_validator(mode="after")
+    def _check_type_consistency(self) -> "FieldFormat":
+        if self.type is FieldFormatType.TEXT and (
+            self.decimals is not None or self.prefix is not None or self.suffix is not None
+        ):
+            raise ValueError("format tipo=text nao aceita decimals/prefix/suffix")
+        return self
+
+
+class TextBlock(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["text"]
+    source: FeaturePanelFieldSource
+    field: str = Field(min_length=1)
+    style: TextBlockStyle = TextBlockStyle.BODY
+
+    @model_validator(mode="after")
+    def _check_indicator_field(self) -> "TextBlock":
+        if self.source is FeaturePanelFieldSource.INDICATOR:
+            _validate_por_feicao_indicator(self.field)
+        return self
+
+
+class TableField(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source: FeaturePanelFieldSource
+    key: str = Field(min_length=1)
+    label: str = Field(min_length=1, max_length=FIELD_LABEL_MAX_LENGTH)
+    format: FieldFormat | None = None
+
+    @model_validator(mode="after")
+    def _check_indicator_key(self) -> "TableField":
+        if self.source is FeaturePanelFieldSource.INDICATOR:
+            _validate_por_feicao_indicator(self.key)
+        return self
+
+
+class TableBlock(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["table"]
+    layout: Literal["key_value"] = "key_value"
+    fields: list[TableField] = Field(min_length=TABLE_FIELD_MIN, max_length=TABLE_FIELD_MAX)
+
+    @model_validator(mode="after")
+    def _check_unique_fields(self) -> "TableBlock":
+        seen: set[tuple[FeaturePanelFieldSource, str]] = set()
+        for item in self.fields:
+            key = (item.source, item.key)
+            if key in seen:
+                raise ValueError(
+                    f"campo duplicado na tabela: source={item.source.value!r}, "
+                    f"key={item.key!r}"
+                )
+            seen.add(key)
+        return self
+
+
+FeaturePanelBlock = Annotated[TextBlock | TableBlock, Field(discriminator="type")]
+
+
+class FeaturePanelConfig(BaseModel):
+    """ADR 014, Decisao 7 (nota 33) - core panel opened on feature click.
+    Disabled by default: an absent/default config is a valid, inert
+    document, not an error."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    title_field: str | None = None
+    width: FeaturePanelWidth = FeaturePanelWidth.COMPACT
+    blocks: list[FeaturePanelBlock] = Field(
+        default_factory=list, max_length=FEATURE_PANEL_MAX_BLOCKS
+    )
+
+
 class Interaction(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     tooltip_fields: list[str] = Field(default_factory=list)
     selectable: bool = True
+    feature_panel: FeaturePanelConfig = Field(default_factory=FeaturePanelConfig)
     # Reserved in v1 (ADR 014): visual filters never alter persisted results.
     filters: None = None
 

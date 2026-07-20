@@ -42,6 +42,27 @@
       "interaction": {
         "tooltip_fields": ["quadra_id"],
         "selectable": true,
+        "feature_panel": {
+          "enabled": true,
+          "title_field": "quadra_id",
+          "width": "medium",
+          "blocks": [
+            {"type": "text", "source": "property", "field": "quadra_id", "style": "subtitle"},
+            {
+              "type": "table",
+              "layout": "key_value",
+              "fields": [
+                {"source": "property", "key": "quadra_id", "label": "Quadra", "format": null},
+                {
+                  "source": "indicator",
+                  "key": "lots.frontage_length",
+                  "label": "Testada",
+                  "format": {"type": "number", "decimals": 1, "prefix": null, "suffix": "m"}
+                }
+              ]
+            }
+          ]
+        },
         "filters": null
       }
     },
@@ -69,7 +90,17 @@
         "null_color": null,
         "labels": null
       },
-      "interaction": {"tooltip_fields": [], "selectable": true, "filters": null}
+      "interaction": {
+        "tooltip_fields": [],
+        "selectable": true,
+        "feature_panel": {
+          "enabled": false,
+          "title_field": null,
+          "width": "compact",
+          "blocks": []
+        },
+        "filters": null
+      }
     }
   ]
 }
