@@ -6,6 +6,8 @@ import type { CatalogIndicator } from "../features/catalog/api/listCatalogIndica
 import type { AnalysisRun } from "../features/results/api/listProjectRuns";
 import type { IndicatorResult } from "../features/results/api/listProjectResults";
 import {
+  buildCategoryShares,
+  buildCompoundTable,
   buildDistributionEntries,
   buildResultIndicatorViews,
   buildResultOverlay,
@@ -218,6 +220,14 @@ function ResultExplorer({
 }) {
   const distribution = useMemo(() => buildDistributionEntries(view), [view]);
   const summary = useMemo(() => numericDistributionSummary(distribution), [distribution]);
+  const categoryShares = useMemo(
+    () => (view.valueShape === "category_breakdown" ? buildCategoryShares(view) : []),
+    [view],
+  );
+  const compoundTable = useMemo(
+    () => (view.valueShape === "feature_compound" ? buildCompoundTable(view) : null),
+    [view],
+  );
   const overlay = useMemo(() => buildResultOverlay(view, layers), [layers, view]);
   const selectedValue = useMemo(
     () => selectedFeatureResult(view, selectedFeature),
@@ -260,11 +270,20 @@ function ResultExplorer({
           </div>
           <div className="result-map-frame">
             <MapCanvas resultOverlay={overlay} />
-            {overlay ? (
+            {overlay?.kind === "numeric" ? (
               <div className="result-map-scale">
                 <span>{formatScalarValue(overlay.min, view.unit)}</span>
                 <i />
                 <span>{formatScalarValue(overlay.max, view.unit)}</span>
+              </div>
+            ) : overlay?.kind === "categorical" ? (
+              <div className="result-map-categories">
+                {overlay.categories.map((category) => (
+                  <span key={category.key} className="result-map-category-chip">
+                    <i style={{ background: category.color }} />
+                    {category.label}
+                  </span>
+                ))}
               </div>
             ) : (
               <div className="result-map-note">
@@ -299,33 +318,98 @@ function ResultExplorer({
       </div>
 
       <div className="result-support-grid">
-        <section className="result-distribution panel-surface">
-          <div className="result-section-heading">
-            <div><span className="eyebrow">Distribuição</span><h3>{distribution.length ? "Valores detalhados" : "Valor consolidado"}</h3></div>
-            {summary && <span>{summary.count} valores numéricos</span>}
-          </div>
-          {summary && (
-            <div className="distribution-summary">
-              <span><small>Mínimo</small><strong>{formatScalarValue(summary.min, view.unit)}</strong></span>
-              <span><small>Média</small><strong>{formatScalarValue(summary.mean, view.unit)}</strong></span>
-              <span><small>Máximo</small><strong>{formatScalarValue(summary.max, view.unit)}</strong></span>
+        {view.valueShape === "category_breakdown" ? (
+          <section className="result-distribution panel-surface">
+            <div className="result-section-heading">
+              <div><span className="eyebrow">Composição</span><h3>Participação por categoria</h3></div>
+              {categoryShares.length > 0 && <span>{categoryShares.length} categorias</span>}
             </div>
-          )}
-          {distribution.length ? (
-            <div className="distribution-list">
-              {distribution.slice(0, 12).map((entry) => (
-                <div className="distribution-row" key={entry.key}>
-                  <span title={entry.key}>{friendlyKey(entry.key)}</span>
-                  <i><b style={{ width: `${maxMagnitude ? Math.max(2, Math.abs(entry.numericValue ?? 0) / maxMagnitude * 100) : 0}%` }} /></i>
-                  <strong>{entry.formattedValue}</strong>
-                </div>
-              ))}
-              {distribution.length > 12 && <p className="distribution-more">Mais {distribution.length - 12} registros disponíveis no resultado.</p>}
+            {categoryShares.length ? (
+              <div className="category-share-list">
+                {categoryShares.map((entry) => (
+                  <div className="category-share-row" key={entry.key}>
+                    <span className="category-share-label" title={entry.key}>
+                      <i className="category-share-chip" style={{ background: entry.color }} />
+                      {entry.label}
+                    </span>
+                    <i><b style={{ width: `${Math.max(2, entry.share * 100)}%`, background: entry.color }} /></i>
+                    <span className="category-share-numbers">
+                      <strong>{entry.formattedShare}</strong>
+                      {view.unit !== "ratio" && <small>{entry.formattedValue}</small>}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="result-section-empty">Nenhuma categoria com valor calculado nesta execução.</p>
+            )}
+          </section>
+        ) : view.valueShape === "categorical_label" ? (
+          <section className="result-distribution panel-surface">
+            <div className="result-section-heading">
+              <div><span className="eyebrow">Classificação</span><h3>Categoria resultante</h3></div>
             </div>
-          ) : (
-            <p className="result-section-empty">Este indicador retorna um único valor para o projeto.</p>
-          )}
-        </section>
+            <div className={view.rawValue ? "categorical-label-display" : "categorical-label-display empty"}>
+              <strong>{view.formattedValue}</strong>
+              <small>{view.rawValue
+                ? "Categoria com maior área classificada no projeto."
+                : "Empate entre categorias ou universo sem classificação - consulte os avisos do cálculo."}</small>
+            </div>
+          </section>
+        ) : view.valueShape === "feature_compound" && compoundTable ? (
+          <section className="result-distribution panel-surface">
+            <div className="result-section-heading">
+              <div><span className="eyebrow">Detalhamento</span><h3>Valores por {view.featureKey === "quadra_id" ? "quadra" : "feição"}</h3></div>
+              <span>{compoundTable.rows.length} registros</span>
+            </div>
+            <div className="compound-table-scroll">
+              <table className="compound-table">
+                <thead>
+                  <tr>
+                    <th>{view.featureKey === "quadra_id" ? "Quadra" : "Feição"}</th>
+                    {compoundTable.columns.map((column) => <th key={column.key}>{column.label}</th>)}
+                  </tr>
+                </thead>
+                <tbody>
+                  {compoundTable.rows.map((row) => (
+                    <tr key={row.key}>
+                      <th title={row.key}>{view.featureKey === "quadra_id" ? row.key : row.key.slice(0, 8)}</th>
+                      {row.cells.map((cell, index) => <td key={compoundTable.columns[index].key}>{cell}</td>)}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        ) : (
+          <section className="result-distribution panel-surface">
+            <div className="result-section-heading">
+              <div><span className="eyebrow">Distribuição</span><h3>{distribution.length ? "Valores detalhados" : "Valor consolidado"}</h3></div>
+              {summary && <span>{summary.count} valores numéricos</span>}
+            </div>
+            {summary && (
+              <div className="distribution-summary">
+                <span><small>Mínimo</small><strong>{formatScalarValue(summary.min, view.unit)}</strong></span>
+                <span><small>Média</small><strong>{formatScalarValue(summary.mean, view.unit)}</strong></span>
+                <span><small>Máximo</small><strong>{formatScalarValue(summary.max, view.unit)}</strong></span>
+              </div>
+            )}
+            {distribution.length ? (
+              <div className="distribution-list">
+                {distribution.slice(0, 12).map((entry) => (
+                  <div className="distribution-row" key={entry.key}>
+                    <span title={entry.key}>{friendlyKey(entry.key)}</span>
+                    <i><b style={{ width: `${maxMagnitude ? Math.max(2, Math.abs(entry.numericValue ?? 0) / maxMagnitude * 100) : 0}%` }} /></i>
+                    <strong>{entry.formattedValue}</strong>
+                  </div>
+                ))}
+                {distribution.length > 12 && <p className="distribution-more">Mais {distribution.length - 12} registros disponíveis no resultado.</p>}
+              </div>
+            ) : (
+              <p className="result-section-empty">Este indicador retorna um único valor para o projeto.</p>
+            )}
+          </section>
+        )}
 
         <section className="result-warnings panel-surface">
           <div className="result-section-heading">

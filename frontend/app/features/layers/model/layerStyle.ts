@@ -7,7 +7,7 @@ import type {
   RepresentationOption,
 } from "../../../lib/types";
 
-const layerLabels: Record<ProjectLayer["layer_type"], string> = {
+export const layerLabels: Record<ProjectLayer["layer_type"], string> = {
   perimetro: "Perímetro",
   quadras: "Quadras",
   lotes: "Lotes",

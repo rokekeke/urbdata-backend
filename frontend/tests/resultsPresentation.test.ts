@@ -4,11 +4,14 @@ import type { CatalogIndicator } from "../app/features/catalog/api/listCatalogIn
 import type { AnalysisRun } from "../app/features/results/api/listProjectRuns";
 import type { IndicatorResult } from "../app/features/results/api/listProjectResults";
 import {
+  buildCategoryShares,
+  buildCompoundTable,
   buildDistributionEntries,
   buildResultIndicatorViews,
   buildResultOverlay,
   formatDuration,
   formatScalarValue,
+  normalizeCategoryKey,
   numericDistributionSummary,
   runStatusLabel,
   runThemes,
@@ -28,6 +31,8 @@ function catalogIndicator(
     unit: "ratio",
     formula_version: "1.0.0",
     granularity: "projeto",
+    value_shape: "scalar",
+    category_feature_property: null,
     feature_key: null,
     required_layers: ["territorio"],
     optional_layers: [],
@@ -112,12 +117,41 @@ describe("resultsPresentation", () => {
     );
 
     expect(buildResultOverlay(view, [layer])).toEqual({
+      kind: "numeric",
       layerId: layer.id,
       featureKey: "feature_id",
       values: { "feature-1": 12, "feature-2": 0 },
       min: 0,
       max: 12,
     });
+  });
+
+  it("cria sobreposição categórica para distribuição com propriedade de feição", () => {
+    const [view] = buildResultIndicatorViews(
+      [catalogIndicator("territorial.area_by_category", {
+        value_shape: "category_breakdown",
+        category_feature_property: "macroarea",
+        unit: "m2",
+      })],
+      [result("territorial.area_by_category", { lote: 6000, sistema_viario: 3000 }, "m2")],
+    );
+    const overlay = buildResultOverlay(view, [layer]);
+
+    expect(overlay).toMatchObject({
+      kind: "categorical",
+      layerId: layer.id,
+      property: "macroarea",
+    });
+    if (overlay?.kind !== "categorical") throw new Error("overlay categórico esperado");
+    expect(overlay.categories.map((category) => category.key)).toEqual(["lote", "sistema_viario"]);
+    expect(overlay.categories[1].normalizedKey).toBe("sistemaviario");
+    expect(new Set(overlay.categories.map((category) => category.color)).size).toBe(2);
+  });
+
+  it("normaliza valor bruto e chave de categoria para a mesma forma", () => {
+    expect(normalizeCategoryKey("SISTEMA VIÁRIO")).toBe("sistemaviario");
+    expect(normalizeCategoryKey("sistema_viario")).toBe("sistemaviario");
+    expect(normalizeCategoryKey("LOTE")).toBe("lote");
   });
 
   it("resolve valor da feição selecionada por UUID sem converter zero em ausência", () => {
@@ -131,6 +165,77 @@ describe("resultsPresentation", () => {
       featureId: "feature-1",
       properties: {},
     })).toEqual({ status: "available", formattedValue: "0 m" });
+  });
+
+  it("monta participação por categoria com rótulos do vocabulário e soma 100%", () => {
+    const [view] = buildResultIndicatorViews(
+      [catalogIndicator("territorial.area_by_category", { value_shape: "category_breakdown", unit: "m2" })],
+      [result("territorial.area_by_category", { lote: 6000, sistema_viario: 3000, avl: 1000 }, "m2")],
+    );
+    const shares = buildCategoryShares(view);
+
+    expect(shares.map((entry) => entry.label)).toEqual(["Lote", "Sistema viário", "AVL"]);
+    expect(shares[0].formattedShare).toBe("60 %");
+    expect(shares[0].formattedValue).toBe("6.000 m²");
+    expect(shares.reduce((total, entry) => total + entry.share, 0)).toBeCloseTo(1);
+  });
+
+  it("monta tabela composta com colunas rotuladas e valores por quadra", () => {
+    const [view] = buildResultIndicatorViews(
+      [catalogIndicator("quadras.stats", {
+        theme: "quadras",
+        value_shape: "feature_compound",
+        granularity: "por_feicao",
+        feature_key: "quadra_id",
+        unit: "composto",
+      })],
+      [result("quadras.stats", {
+        "Q-B": { area_m2: 2400.5, perimetro_m: 220, quantidade_lotes: 12 },
+        "Q-A": { area_m2: 1800, perimetro_m: 180, quantidade_lotes: 8 },
+      }, "composto")],
+    );
+    const table = buildCompoundTable(view);
+
+    expect(table?.columns.map((column) => column.label)).toEqual([
+      "Área (m²)",
+      "Perímetro (m)",
+      "Lotes",
+    ]);
+    expect(table?.rows.map((row) => row.key)).toEqual(["Q-A", "Q-B"]);
+    expect(table?.rows[1].cells).toEqual(["2.400,5", "220", "12"]);
+  });
+
+  it("apresenta rótulo categórico e distingue empate de dado ausente", () => {
+    const [predominant] = buildResultIndicatorViews(
+      [catalogIndicator("land_use.predominant_use", { value_shape: "categorical_label", unit: "categoria" })],
+      [result("land_use.predominant_use", "residencial", "categoria")],
+    );
+    const [tie] = buildResultIndicatorViews(
+      [catalogIndicator("land_use.predominant_use", { value_shape: "categorical_label", unit: "categoria" })],
+      [result("land_use.predominant_use", null, "categoria")],
+    );
+
+    expect(predominant.formattedValue).toBe("Residencial");
+    expect(tie.formattedValue).toBe("Sem categoria predominante");
+  });
+
+  it("resolve valor composto da feição selecionada com rótulos legíveis", () => {
+    const [view] = buildResultIndicatorViews(
+      [catalogIndicator("quadras.stats", {
+        theme: "quadras",
+        value_shape: "feature_compound",
+        granularity: "por_feicao",
+        feature_key: "quadra_id",
+        unit: "composto",
+      })],
+      [result("quadras.stats", { "Q-A": { area_m2: 1800, quantidade_lotes: 8 } }, "composto")],
+    );
+
+    expect(selectedFeatureResult(view, {
+      layerId: layer.id,
+      featureId: "feature-x",
+      properties: { quadra_id: "Q-A" },
+    })).toEqual({ status: "available", formattedValue: "Área (m²) 1.800 · Lotes 8" });
   });
 
   it("apresenta metadados do histórico sem inferir temas ausentes", () => {

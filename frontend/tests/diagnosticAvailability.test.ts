@@ -16,6 +16,8 @@ function indicator(theme: string, requiredLayers: string[]): CatalogIndicator {
     unit: "m2",
     formula_version: "1.0.0",
     granularity: "projeto",
+    value_shape: "scalar",
+    category_feature_property: null,
     feature_key: null,
     required_layers: requiredLayers,
     optional_layers: [],

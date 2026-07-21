@@ -28,6 +28,8 @@ function indicator(
     unit: "%",
     formula_version: "1.0.0",
     granularity,
+    value_shape: granularity === "por_feicao" ? "feature_series" : "scalar",
+    category_feature_property: null,
     feature_key: featureKey,
     required_layers: ["territorio"],
     optional_layers: [],

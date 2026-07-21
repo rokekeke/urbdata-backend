@@ -1,12 +1,16 @@
 "use client";
 
+import { useState } from "react";
+
 import type { AppError } from "../lib/errors";
 import type { LayerStyleConfig } from "../lib/types";
 import type { LayerAttributes } from "../features/layers/api/getLayerAttributes";
+import { useDeleteLayer } from "../features/layers/hooks/useDeleteLayer";
 import type { LayerGeojsonViewState } from "../features/layers/hooks/useLayerGeojsonQueries";
 import type { ProjectVersion } from "../features/projects";
 
 interface DataWorkspaceProps {
+  projectId: string | null;
   activeVersion: ProjectVersion | null;
   layers: LayerStyleConfig[];
   selectedLayer: LayerStyleConfig | null;
@@ -29,6 +33,7 @@ const statusLabels: Record<NonNullable<LayerStyleConfig["status"]>, string> = {
 };
 
 export default function DataWorkspace({
+  projectId,
   activeVersion,
   layers,
   selectedLayer,
@@ -43,6 +48,16 @@ export default function DataWorkspace({
   onOpenDocumentation,
 }: DataWorkspaceProps) {
   const featureCount = layers.reduce((total, layer) => total + (layer.featureCount ?? 0), 0);
+  const [deleteArmedLayerId, setDeleteArmedLayerId] = useState<string | null>(null);
+  const deleteLayer = useDeleteLayer(projectId, activeVersion?.id ?? null);
+
+  function handleDeleteClick(layerId: string) {
+    if (deleteArmedLayerId !== layerId) {
+      setDeleteArmedLayerId(layerId);
+      return;
+    }
+    deleteLayer.mutate(layerId, { onSettled: () => setDeleteArmedLayerId(null) });
+  }
 
   return (
     <div className="data-view">
@@ -85,16 +100,52 @@ export default function DataWorkspace({
               </div>
               <p className="panel-help">Selecione uma camada para conferir campos, cobertura e recomendações de representação.</p>
               {layers.map((layer) => (
-                <button
-                  key={layer.id}
-                  className={selectedLayer?.id === layer.id ? "data-layer-item active" : "data-layer-item"}
-                  onClick={() => onSelectLayer(layer.id)}
-                >
-                  <span className="data-layer-symbol" style={{ background: layer.color, borderColor: layer.strokeColor }} />
-                  <span><strong>{layer.shortName}</strong><small>{layer.featureCount?.toLocaleString("pt-BR") ?? 0} elementos · {layer.geometry} · {geojsonStateLabel(geojsonStateByLayerId[layer.id])}</small></span>
-                  <em className={`layer-status ${layer.status ?? "uploaded"}`}>{statusLabels[layer.status ?? "uploaded"]}</em>
-                </button>
+                <div key={layer.id} className="data-layer-row">
+                  <button
+                    className={selectedLayer?.id === layer.id ? "data-layer-item active" : "data-layer-item"}
+                    onClick={() => onSelectLayer(layer.id)}
+                  >
+                    <span className="data-layer-symbol" style={{ background: layer.color, borderColor: layer.strokeColor }} />
+                    <span><strong>{layer.shortName}</strong><small>{layer.featureCount?.toLocaleString("pt-BR") ?? 0} elementos · {layer.geometry} · {geojsonStateLabel(geojsonStateByLayerId[layer.id])}</small></span>
+                    <em className={`layer-status ${layer.status ?? "uploaded"}`}>{statusLabels[layer.status ?? "uploaded"]}</em>
+                  </button>
+                  {deleteArmedLayerId === layer.id ? (
+                    <span className="data-layer-delete-confirm">
+                      <button
+                        className="text-button danger"
+                        type="button"
+                        disabled={deleteLayer.isPending}
+                        onClick={() => handleDeleteClick(layer.id)}
+                      >
+                        {deleteLayer.isPending ? "Excluindo…" : "Confirmar"}
+                      </button>
+                      <button
+                        className="text-button"
+                        type="button"
+                        disabled={deleteLayer.isPending}
+                        onClick={() => setDeleteArmedLayerId(null)}
+                      >
+                        Cancelar
+                      </button>
+                    </span>
+                  ) : (
+                    <button
+                      className="data-layer-delete-button"
+                      type="button"
+                      aria-label={`Excluir ${layer.shortName}`}
+                      title="Excluir camada"
+                      onClick={() => handleDeleteClick(layer.id)}
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
               ))}
+              {deleteLayer.isError && (
+                <div className="layer-runtime-message error" role="alert">
+                  <span>{deleteLayer.error.message}</span>
+                </div>
+              )}
             </aside>
 
             <section className="data-attributes panel-surface" aria-label="Atributos da camada selecionada">
@@ -132,13 +183,16 @@ export default function DataWorkspace({
                     <span><b>{attributes.compatible_indicators.length}</b> indicadores compatíveis</span>
                   </div>
                   <div className="attribute-table" role="table" aria-label="Campos disponíveis">
-                    <div className="attribute-row header" role="row"><span>Campo</span><span>Origem</span><span>Tipo</span><span>Representação</span></div>
+                    <div className="attribute-row header" role="row"><span>Campo</span><span>Origem</span><span>Tipo</span><span>Representação</span><span>Valor</span></div>
                     {attributes.fields.map((field) => (
                       <div className="attribute-row" role="row" key={`${field.origin}-${field.field}`}>
                         <strong>{field.field}</strong>
                         <span>{field.origin === "mapped" ? "Mapeado" : "Fonte"}</span>
                         <span>{field.detected_type}</span>
                         <span>{field.recommended_mode ?? field.unsuitable_reason ?? "Estilo único"}</span>
+                        <span className="attribute-value-cell" title={sampleValueLabel(attributes.sample_values[field.field])}>
+                          {sampleValueLabel(attributes.sample_values[field.field])}
+                        </span>
                       </div>
                     ))}
                   </div>
@@ -152,6 +206,11 @@ export default function DataWorkspace({
       )}
     </div>
   );
+}
+
+function sampleValueLabel(values: string[] | undefined): string {
+  if (!values || values.length === 0) return "—";
+  return values.length > 1 ? `${values[0]} (+${values.length - 1})` : values[0];
 }
 
 function geojsonStateLabel(state: LayerGeojsonViewState | undefined): string {

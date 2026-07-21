@@ -119,6 +119,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/projects/{project_id}/layers/{layer_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Layer
+         * @description Hard delete (Frente 3, nota 52): remove a camada e suas feicoes.
+         *     Feicoes de outras camadas que apontavam para estas (quadra/lote) sao
+         *     desvinculadas, nunca removidas em cascata; resultados ja persistidos e
+         *     documentos cartograficos ficam intactos - referencias orfas viram
+         *     `integrity_warnings` na leitura (ADR 014, Decisao 8).
+         */
+        delete: operations["delete_layer_v1_projects__project_id__layers__layer_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/projects/{project_id}/layers/{layer_id}/geojson": {
         parameters: {
             query?: never;
@@ -470,6 +494,9 @@ export interface components {
             formula_version: string;
             granularity: components["schemas"]["IndicatorGranularity"];
             feature_key: components["schemas"]["FeatureKey"] | null;
+            value_shape: components["schemas"]["ValueShape"];
+            /** Category Feature Property */
+            category_feature_property: string | null;
             /** Required Layers */
             required_layers: string[];
             /** Optional Layers */
@@ -1193,6 +1220,26 @@ export interface components {
             /** Context */
             ctx?: Record<string, never>;
         };
+        /**
+         * ValueShape
+         * @description Structure of the raw value this indicator persists (`value`/
+         *     `value_json` in `indicator_results`) - drives which visualization the
+         *     frontend picks for it (indicator representation review, 2026-07-20).
+         *     Independent of `unit`/number formatting, which stays on the
+         *     calculation result (`IndicatorDefinition.unit`), not here.
+         *
+         *     - SCALAR: one number for the whole project.
+         *     - CATEGORY_BREAKDOWN: dict[categoria -> numero] for the whole project
+         *       (e.g. area/percentual por macroarea ou uso do solo).
+         *     - CATEGORICAL_LABEL: a single category name for the whole project (or
+         *       null on a tie/no data) - not a number at all.
+         *     - FEATURE_SERIES: one number per feature/quadra (`por_feicao`) - the
+         *       existing min/mean/max + ranked-list view already suits this.
+         *     - FEATURE_COMPOUND: one compound record (dict of sub-fields) per
+         *       feature/quadra (`por_feicao`) - needs a table, not a single bar.
+         * @enum {string}
+         */
+        ValueShape: "scalar" | "category_breakdown" | "categorical_label" | "feature_series" | "feature_compound";
         /** Viewport */
         Viewport: {
             /** Longitude */
@@ -1580,6 +1627,45 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorEnvelopeOut"];
+                };
+            };
+        };
+    };
+    delete_layer_v1_projects__project_id__layers__layer_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                layer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelopeOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
