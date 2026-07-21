@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 
-from app.domain.analysis.presentation import FeatureKey, IndicatorGranularity
+from app.domain.analysis.presentation import FeatureKey, IndicatorGranularity, ValueShape
 
 
 class CatalogIndicatorOut(BaseModel):
@@ -12,5 +12,7 @@ class CatalogIndicatorOut(BaseModel):
     formula_version: str
     granularity: IndicatorGranularity
     feature_key: FeatureKey | None
+    value_shape: ValueShape
+    category_feature_property: str | None
     required_layers: list[str]
     optional_layers: list[str]

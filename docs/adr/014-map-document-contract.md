@@ -7,7 +7,7 @@
   quebradas - checkpoint 4.1, nota Obsidian 38)
 - Emenda 20/07/2026: item 4.6 implementado (rotas HTTP) - esclarecimento do
   formato do 409 da Decisao 4 (ver abaixo)
-- Emenda 20/07/2026: Decisao 6 (checkpoint 5.1, nota Obsidian 44) -
+- Emenda 20/07/2026: Decisao 6 (checkpoint 5.1, nota Obsidian 46) -
   lifecycle de status e forma da interacao HTTP do export
 - Contexto: aba Documentacao (nota 24), backlog DOC-BE-001..010 (nota 25 /
   `docs/backlog/map-documentation-backend.md`), caminho definitivo do MVP
@@ -220,7 +220,7 @@ exports.config (JSONB)
 - Formato v1: PNG. Presets de prancha (A4/A3, DPI) aguardam definicao do
   urbanista - fora da v1.
 
-**Checkpoint 5.1 (20/07/2026, nota Obsidian 44) - lifecycle e interacao HTTP,
+**Checkpoint 5.1 (20/07/2026, nota Obsidian 46) - lifecycle e interacao HTTP,
 resolvido com o usuario antes de codificar:**
 
 - **Status: 4 estados**, mesmo vocabulario de `AnalysisStatus`
@@ -260,6 +260,21 @@ conectado a um uso real: `BasemapNotExportableError` rejeita um mapa-base
 nao liberado para exportacao - nenhuma entrada do catalogo usa isso hoje,
 mas o campo deixa de ser um valor morto. Verificado com banco isolado
 (ciclo upgrade/downgrade/upgrade), banco compartilhado intocado.
+
+**Implementado 20/07/2026 (itens 5.5/5.6 - fecha a Fase 5)**:
+`app/api/v1/routes/exports.py` + `schemas/export.py` - as 3 rotas do
+lifecycle de duas chamadas (`POST .../exports` cria+congela, `POST
+.../exports/{id}/file` entrega o PNG e completa, `GET .../exports/{id}`
+consulta). `analysis_run_id` opcional agora validado contra o projeto
+antes de persistir (reusa `AnalysisRepository.get_run_for_project`) -
+sem isso, um id invalido quebraria a FK do banco com um 500 cru em vez
+de um 404 limpo. Storage (5.6) e limite de tamanho (5.6) reaproveitados
+sem codigo novo: `LocalStorage` e `MaxUploadSizeMiddleware` ja existiam
+para os uploads de camada. Unica validacao export-especifica: assinatura
+PNG (8 bytes magicos) - upload invalido vira `422` e marca o export
+`failed` no banco (nao so um erro HTTP efemero). Simplificacao
+deliberada de v1: entregar um arquivo para um export ja
+`completed`/`failed` apenas sobrescreve, sem guarda de transicao.
 
 ## Decisao 7 - Painel informativo de feicao (feature_panel, nota 33)
 

@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.api.v1.errors import error_detail
 from app.api.v1.schemas.error import BAD_REQUEST, NOT_FOUND, TOO_LARGE, UNPROCESSABLE
 from app.api.v1.schemas.layer import (
+    AttributeMappingWarningOut,
     GeoJSONFeatureCollectionOut,
     GeoJSONFeatureOut,
     LayerAttributeMappingIn,
@@ -24,12 +25,20 @@ from app.domain.analysis.exceptions import (
     ProjectNotFoundError,
     RequiredLayerMissingError,
 )
+from app.domain.attribute_suggestions import suggest_attribute_mapping
 from app.domain.cartography.representation_options import (
     compatible_indicator_codes,
     recommend_mode,
 )
+from app.domain.csv_import import CSVParseError, parse_csv
+from app.domain.layer_join import (
+    AttributeJoinError,
+    JoinResult,
+    join_geometry_and_attributes,
+    resolve_geometry_join_keys,
+)
 from app.domain.text_encoding import fix_geojson_feature_properties
-from app.infrastructure.database.models.layer import LayerType
+from app.infrastructure.database.models.layer import ImportProfile, LayerType
 from app.infrastructure.database.repositories.feature_repository import FeatureRepository
 from app.infrastructure.database.repositories.project_repository import ProjectRepository
 from app.infrastructure.database.session import get_db
@@ -67,6 +76,10 @@ def upload_layer(
     project_id: uuid.UUID,
     layer_type: LayerType = Form(...),
     file: UploadFile = File(...),
+    import_profile: ImportProfile = Form(ImportProfile.COMBINED),
+    attributes_file: UploadFile | None = File(None),
+    attributes_join_key: str | None = Form(None),
+    geometry_join_key: str | None = Form(None),
     db: Session = Depends(get_db),
 ) -> object:
     try:
@@ -75,6 +88,29 @@ def upload_layer(
         raise HTTPException(
             status_code=404, detail=error_detail(exc.code, exc.message, exc.context)
         ) from exc
+
+    # Nota 53/54 checkpoint: attributes_file/attributes_join_key are only
+    # meaningful (and only required) when the CSV is separate from the
+    # geometry file - geometry_join_key stays optional either way (null
+    # means feature.id, not "unknown"). Validated before any file parsing.
+    if import_profile is ImportProfile.COMBINED and attributes_file is not None:
+        raise HTTPException(
+            status_code=400,
+            detail=error_detail(
+                "invalid_import_profile",
+                "attributes_file so e aceito quando import_profile='split'.",
+            ),
+        )
+    if import_profile is ImportProfile.SPLIT and (
+        attributes_file is None or not attributes_join_key
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=error_detail(
+                "invalid_import_profile",
+                "import_profile='split' exige attributes_file e attributes_join_key.",
+            ),
+        )
 
     raw = file.file.read()
     try:
@@ -132,12 +168,63 @@ def upload_layer(
             detail=error_detail("geometry_mismatch", "Geometria ausente ou invalida."),
         )
 
-    # Preserve the original upload unmodified before any parsing-derived data is
-    # persisted (README invariant: never silently lose the source file).
+    # Split profile: geometry and attributes arrive as two files, joined by
+    # an explicit key (nota 53/54) - resolved from the already mojibake-fixed
+    # properties above, since geometry_join_key names one of those fields.
+    join_result: JoinResult | None = None
+    if import_profile is ImportProfile.SPLIT:
+        if attributes_file is None or not attributes_join_key:
+            raise HTTPException(
+                status_code=400,
+                detail=error_detail(
+                    "invalid_import_profile",
+                    "import_profile='split' exige attributes_file e attributes_join_key.",
+                ),
+            )
+        try:
+            attribute_rows = parse_csv(attributes_file.file.read())
+        except CSVParseError as exc:
+            raise HTTPException(
+                status_code=400, detail=error_detail(exc.code, exc.message, exc.context)
+            ) from exc
+
+        geometry_keys = resolve_geometry_join_keys(features, geometry_join_key)
+        try:
+            join_result = join_geometry_and_attributes(
+                geometry_keys, attribute_rows, attributes_join_key
+            )
+        except AttributeJoinError as exc:
+            raise HTTPException(
+                status_code=400, detail=error_detail(exc.code, exc.message, exc.context)
+            ) from exc
+
+        # CSV attributes are the authoritative source in the split profile,
+        # so they win on a key collision (e.g. the join key itself, which by
+        # definition holds the same value on both sides already).
+        for pair in join_result.matched:
+            existing_properties = features[pair.geometry_index].get("properties")
+            if not isinstance(existing_properties, dict):
+                existing_properties = {}
+            features[pair.geometry_index]["properties"] = {
+                **existing_properties,
+                **pair.attribute_row,
+            }
+
+    # Preserve the original upload(s) unmodified before any parsing-derived data
+    # is persisted (README invariant: never silently lose the source file) -
+    # both files in the split profile (nota 53: "preservar os dois arquivos
+    # originais sem alteracao"), not just the geometry.
     file.file.seek(0)
     LocalStorage().save(
         file.file, filename=file.filename or "layer.geojson", subpath=str(project_id)
     )
+    if attributes_file is not None:
+        attributes_file.file.seek(0)
+        LocalStorage().save(
+            attributes_file.file,
+            filename=attributes_file.filename or "attributes.csv",
+            subpath=str(project_id),
+        )
 
     layer = FeatureRepository(db).create_layer_with_features(
         project_version_id=version_id,
@@ -145,6 +232,11 @@ def upload_layer(
         source_filename=file.filename,
         geometry_type=geometry_type,
         raw_features=features,
+        import_profile=import_profile,
+        attributes_filename=attributes_file.filename if attributes_file else None,
+        attributes_join_key=attributes_join_key,
+        geometry_join_key=geometry_join_key,
+        join_summary=join_result.summary.to_dict() if join_result is not None else None,
     )
     return layer
 
@@ -213,7 +305,7 @@ def get_layer_attributes(
         layer_id=layer_id,
         source_fields=sorted(fields),
         sample_values=values,
-        suggested_mapping={},
+        suggested_mapping=suggest_attribute_mapping(fields),
         feature_count=layer.feature_count,
         fields=representation_fields,
         compatible_indicators=list(compatible_indicator_codes(layer.layer_type.value)),
@@ -227,8 +319,16 @@ def map_layer_attributes(
     payload: LayerAttributeMappingIn,
     db: Session = Depends(get_db),
 ) -> LayerAttributeMappingOut:
-    updated = FeatureRepository(db).apply_attribute_mapping(layer_id, payload.mappings)
-    return LayerAttributeMappingOut(layer_id=layer_id, status="mapped", features_updated=updated)
+    result = FeatureRepository(db).apply_attribute_mapping(layer_id, payload.mappings)
+    return LayerAttributeMappingOut(
+        layer_id=layer_id,
+        status="mapped",
+        features_updated=result.features_updated,
+        warnings=[
+            AttributeMappingWarningOut(feature_id=warning.feature_id, message=warning.message)
+            for warning in result.warnings
+        ],
+    )
 
 
 @router.post(
@@ -261,6 +361,29 @@ def derive_quadras_layer(project_id: uuid.UUID, db: Session = Depends(get_db)) -
         ) from exc
 
     return result
+
+
+@router.delete("/{layer_id}", status_code=204, responses={**NOT_FOUND})
+def delete_layer(
+    project_id: uuid.UUID, layer_id: uuid.UUID, db: Session = Depends(get_db)
+) -> None:
+    """Hard delete (Frente 3, nota 52): remove a camada e suas feicoes.
+    Feicoes de outras camadas que apontavam para estas (quadra/lote) sao
+    desvinculadas, nunca removidas em cascata; resultados ja persistidos e
+    documentos cartograficos ficam intactos - referencias orfas viram
+    `integrity_warnings` na leitura (ADR 014, Decisao 8)."""
+    repository = FeatureRepository(db)
+    layer = repository.get_layer_for_project(project_id, layer_id)
+    if layer is None:
+        raise HTTPException(
+            status_code=404,
+            detail=error_detail(
+                "layer_not_found",
+                "Camada nao encontrada neste projeto.",
+                {"layer_id": str(layer_id)},
+            ),
+        )
+    repository.delete_layer(layer)
 
 
 @router.get("/{layer_id}/geojson", response_model=GeoJSONFeatureCollectionOut)

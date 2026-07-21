@@ -35,7 +35,7 @@ def test_fresh_and_stamped_legacy_database_converge_to_head() -> None:
     with engine.connect() as connection:
         assert (
             connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-            == "0009"
+            == "0010"
         )
     columns = {column["name"] for column in inspect(engine).get_columns("indicator_results")}
     assert {
@@ -58,11 +58,19 @@ def test_fresh_and_stamped_legacy_database_converge_to_head() -> None:
     } <= feature_columns
     export_columns = {column["name"] for column in inspect(engine).get_columns("exports")}
     assert {"status", "completed_at", "error"} <= export_columns
+    layer_columns = {column["name"] for column in inspect(engine).get_columns("project_layers")}
+    assert {
+        "import_profile",
+        "attributes_filename",
+        "attributes_join_key",
+        "geometry_join_key",
+        "join_summary",
+    } <= layer_columns
 
     command.downgrade(config, "0001")
     command.upgrade(config, "head")
     with engine.connect() as connection:
         assert (
             connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-            == "0009"
+            == "0010"
         )

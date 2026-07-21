@@ -1,11 +1,12 @@
 import uuid
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
 from app.domain.cartography.document import RepresentationMode
 from app.domain.cartography.representation_options import DetectedType, FieldOrigin
-from app.infrastructure.database.models.layer import LayerStatus, LayerType
+from app.infrastructure.database.models.layer import ImportProfile, LayerStatus, LayerType
 
 
 class LayerOut(BaseModel):
@@ -19,6 +20,13 @@ class LayerOut(BaseModel):
     feature_count: int
     status: LayerStatus
     uploaded_at: datetime
+    # Combined/split import traceability (nota 53/54) - always present;
+    # only the split profile populates anything beyond import_profile itself.
+    import_profile: ImportProfile
+    attributes_filename: str | None
+    attributes_join_key: str | None
+    geometry_join_key: str | None
+    join_summary: dict[str, Any] | None
 
 
 class RepresentationFieldOut(BaseModel):
@@ -55,10 +63,19 @@ class LayerAttributeMappingIn(BaseModel):
     mappings: dict[str, str | None]
 
 
+class AttributeMappingWarningOut(BaseModel):
+    feature_id: uuid.UUID
+    message: str
+
+
 class LayerAttributeMappingOut(BaseModel):
     layer_id: uuid.UUID
     status: str
     features_updated: int
+    # Values the checkpoint decision (nota 53/54) says must never be
+    # auto-converted (e.g. reference_area_m2 with an unrecognized unit) -
+    # set to null and reported here instead of failing the whole mapping.
+    warnings: list[AttributeMappingWarningOut]
 
 
 class QuadrasDeriveOut(BaseModel):

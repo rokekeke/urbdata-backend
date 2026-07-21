@@ -2,6 +2,7 @@
 
 import uuid
 from collections.abc import Callable
+from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -25,7 +26,15 @@ from app.domain.geospatial.layers import (
 from app.domain.geospatial.spatial_relations import SpatialRelation
 from app.domain.text_encoding import normalize_key
 from app.infrastructure.database.models.feature import Feature, RelationMethod
-from app.infrastructure.database.models.layer import LayerStatus, LayerType, ProjectLayer
+from app.infrastructure.database.models.layer import (
+    ImportProfile,
+    LayerAttributeMapping,
+    LayerStatus,
+    LayerType,
+    ProjectLayer,
+)
+from app.infrastructure.database.models.validation import ValidationIssue
+from app.infrastructure.database.models.version import ProjectVersion
 
 _TRUE_TOKENS = {"1", "true", "sim", "yes"}
 _FALSE_TOKENS = {"0", "false", "nao", "no"}
@@ -69,6 +78,50 @@ def _coerce_grouping_key(value: Any) -> str | None:
     text = str(value).strip()
     return text or None
 
+
+_AREA_UNIT_SUFFIX = chr(0x6D) + chr(0xB2)  # "m" + SUPERSCRIPT TWO ("m²")
+
+
+def _coerce_area_m2(value: Any) -> tuple[Decimal | None, str | None]:
+    """Coerce a raw `reference_area_m2` value: accepts a plain number or a
+    string with the exact confirmed unit suffix (e.g. "1338.63 m2" - nota
+    53's real sample). Any other unit or unrecognized text becomes `None`
+    with a warning message instead of `None` alone - the checkpoint
+    decision (nota 53/54) is to never guess/convert a unit automatically.
+    Returns `(None, None)` for a genuinely absent value, since that is not
+    an unrecognized-unit situation."""
+    if value is None:
+        return None, None
+
+    direct = _coerce_decimal(value)
+    if direct is not None:
+        return direct, None
+
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped.endswith(_AREA_UNIT_SUFFIX):
+            numeric_part = stripped[: -len(_AREA_UNIT_SUFFIX)].strip()
+            parsed = _coerce_decimal(numeric_part)
+            if parsed is not None:
+                return parsed, None
+
+    return None, (
+        f"Valor de area '{value}' nao reconhecido (aceita numero puro ou sufixo "
+        f"'{_AREA_UNIT_SUFFIX}') - definido como vazio."
+    )
+
+
+@dataclass(frozen=True)
+class AttributeMappingWarning:
+    feature_id: uuid.UUID
+    message: str
+
+
+@dataclass(frozen=True)
+class AttributeMappingResult:
+    features_updated: int
+    warnings: tuple[AttributeMappingWarning, ...]
+
 # Topological relations (intersects/contains/within) compare geometries as
 # stored (SRID 4326); they don't depend on projection. DWITHIN is metric, so
 # both sides are cast to `geography` to get a meter-based distance without
@@ -95,6 +148,11 @@ class FeatureRepository:
         source_filename: str | None,
         geometry_type: str,
         raw_features: list[dict[str, Any]],
+        import_profile: ImportProfile = ImportProfile.COMBINED,
+        attributes_filename: str | None = None,
+        attributes_join_key: str | None = None,
+        geometry_join_key: str | None = None,
+        join_summary: dict[str, Any] | None = None,
     ) -> ProjectLayer:
         layer = ProjectLayer(
             project_version_id=project_version_id,
@@ -103,6 +161,11 @@ class FeatureRepository:
             geometry_type=geometry_type,
             feature_count=len(raw_features),
             status=LayerStatus.UPLOADED,
+            import_profile=import_profile,
+            attributes_filename=attributes_filename,
+            attributes_join_key=attributes_join_key,
+            geometry_join_key=geometry_join_key,
+            join_summary=join_summary,
         )
         self._session.add(layer)
         self._session.flush()
@@ -134,6 +197,59 @@ class FeatureRepository:
 
     def get_layer(self, layer_id: uuid.UUID) -> ProjectLayer | None:
         return self._session.get(ProjectLayer, layer_id)
+
+    def get_layer_for_project(
+        self, project_id: uuid.UUID, layer_id: uuid.UUID
+    ) -> ProjectLayer | None:
+        """`None` when the layer doesn't exist or belongs to another
+        project - same cross-tenant-blind pattern as
+        `MapDocumentRepository.get_for_project`."""
+        return (
+            self._session.query(ProjectLayer)
+            .join(ProjectVersion, ProjectLayer.project_version_id == ProjectVersion.id)
+            .filter(ProjectLayer.id == layer_id, ProjectVersion.project_id == project_id)
+            .first()
+        )
+
+    def delete_layer(self, layer: ProjectLayer) -> None:
+        """Hard delete of a layer and its features (Frente 3, nota 52).
+
+        Same unlink discipline `derive_quadras_layer` already applies when
+        replacing a derived QUADRAS layer, generalized: features in OTHER
+        layers pointing at this layer's features via
+        `parent_quadra_feature_id`/`parent_lote_feature_id` are unlinked
+        (never cascade-deleted - removing quadras must not remove lots),
+        and `validation_issues` rows keep their run history with the
+        layer/feature reference nulled. Already-persisted indicator
+        results and MapDocument configs are untouched by design:
+        `indicator_results.source_layers` stores names, not FKs, and a
+        stale `layer_id` in a document surfaces as an `integrity_warnings`
+        diagnostic on read (ADR 014, Decisao 8) instead of breaking.
+        """
+        feature_ids = self._session.query(Feature.id).filter(Feature.layer_id == layer.id)
+        self._session.query(Feature).filter(
+            Feature.parent_quadra_feature_id.in_(feature_ids)
+        ).update(
+            {"parent_quadra_feature_id": None, "relation_method": RelationMethod.UNRESOLVED},
+            synchronize_session=False,
+        )
+        self._session.query(Feature).filter(
+            Feature.parent_lote_feature_id.in_(feature_ids)
+        ).update({"parent_lote_feature_id": None}, synchronize_session=False)
+        self._session.query(ValidationIssue).filter(
+            ValidationIssue.feature_id.in_(feature_ids)
+        ).update({"feature_id": None}, synchronize_session=False)
+        self._session.query(ValidationIssue).filter(
+            ValidationIssue.layer_id == layer.id
+        ).update({"layer_id": None}, synchronize_session=False)
+        self._session.query(LayerAttributeMapping).filter(
+            LayerAttributeMapping.layer_id == layer.id
+        ).delete(synchronize_session=False)
+        self._session.query(Feature).filter(Feature.layer_id == layer.id).delete(
+            synchronize_session=False
+        )
+        self._session.delete(layer)
+        self._session.commit()
 
     def list_features(self, layer_id: uuid.UUID) -> list[Feature]:
         return list(self._session.query(Feature).filter(Feature.layer_id == layer_id).all())
@@ -338,8 +454,11 @@ class FeatureRepository:
             )
         return stats
 
-    def apply_attribute_mapping(self, layer_id: uuid.UUID, mappings: dict[str, str | None]) -> int:
+    def apply_attribute_mapping(
+        self, layer_id: uuid.UUID, mappings: dict[str, str | None]
+    ) -> AttributeMappingResult:
         features = self.list_features(layer_id)
+        warnings: list[AttributeMappingWarning] = []
         for feature in features:
             mapped: dict[str, Any] = {}
             for internal_field, source_field in mappings.items():
@@ -354,7 +473,12 @@ class FeatureRepository:
             if "parcelavel" in mapped:
                 feature.parcelavel = _coerce_bool(mapped["parcelavel"])
             if "reference_area_m2" in mapped:
-                feature.reference_area_m2 = _coerce_decimal(mapped["reference_area_m2"])
+                area_value, area_warning = _coerce_area_m2(mapped["reference_area_m2"])
+                feature.reference_area_m2 = area_value
+                if area_warning is not None:
+                    warnings.append(
+                        AttributeMappingWarning(feature_id=feature.id, message=area_warning)
+                    )
             if "quadra_id" in mapped:
                 feature.quadra_id = _coerce_grouping_key(mapped["quadra_id"])
             if "road_status" in mapped:
@@ -368,7 +492,7 @@ class FeatureRepository:
             layer.status = LayerStatus.MAPPED
 
         self._session.commit()
-        return len(features)
+        return AttributeMappingResult(features_updated=len(features), warnings=tuple(warnings))
 
     def load_layer_by_type(
         self, project_version_id: uuid.UUID, layer_type: str
