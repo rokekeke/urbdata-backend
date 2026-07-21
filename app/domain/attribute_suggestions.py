@@ -18,15 +18,24 @@ from app.domain.text_encoding import normalize_key
 
 # Verified against real exports: Obsidian notas 11/23 (earlier Revit/
 # Masterplan deliveries) and the PROJETO_R01.json/MATRICULA.json pair
-# inspected 2026-07-20. `land_use`/`road_status`/`ca_max` have no confirmed
-# alias yet - the source files seen so far don't carry usable values for
-# them (e.g. "Masterplan - Uso"/"Uso do solo" only ever contain "(none)"/
-# "Element", a known exporter bug the export team is fixing).
+# inspected 2026-07-20. `road_status` has no confirmed alias yet - the
+# source files seen so far don't carry usable values for it.
+# `land_use`/`ca_max` were confirmed later by the separate
+# PROJETO_R01_GEOMETRIA.json/DATA_EXPORT_PROJETO_01.csv pair evaluated for
+# the combined GeoJSON+CSV import (nota 53/54): "Uso do solo" carries real
+# categories (Residencial/Misto/Comercial/Industrial/Institucional) and
+# "07.COEFICIENTE DE APROVEITAMENTO" carries real numeric values, unlike
+# the earlier sample's "(none)"/"Element" exporter-bug placeholders.
+# `macroarea` now has two confirmed aliases: "Comments" from the earlier
+# sample stays valid, "TIPO DE MACROÁREA" is the new CSV's equivalent
+# column - both are kept, never replaced.
 _ALIASES: dict[str, tuple[str, ...]] = {
-    "macroarea": ("Comments",),
+    "macroarea": ("Comments", "TIPO DE MACROÁREA"),
     "quadra_id": ("QUADRA",),
     "parcelavel": ("P_Área de Projeto",),
     "reference_area_m2": ("Area",),
+    "land_use": ("Uso do solo",),
+    "ca_max": ("07.COEFICIENTE DE APROVEITAMENTO",),
 }
 
 

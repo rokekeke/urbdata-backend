@@ -1,9 +1,10 @@
 import uuid
 from datetime import datetime
 from enum import StrEnum
+from typing import Any
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infrastructure.database.base import Base, pg_enum
@@ -35,6 +36,15 @@ class LayerStatus(StrEnum):
     ERROR = "error"
 
 
+class ImportProfile(StrEnum):
+    """Whether a layer's attributes arrived embedded in the geometry file
+    (``combined``, the historical/default behaviour) or as a separate CSV
+    joined by key (``split`` - nota 53/54)."""
+
+    COMBINED = "combined"
+    SPLIT = "split"
+
+
 class ProjectLayer(Base):
     __tablename__ = "project_layers"
 
@@ -54,6 +64,13 @@ class ProjectLayer(Base):
     uploaded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+    import_profile: Mapped[ImportProfile] = mapped_column(
+        pg_enum(ImportProfile, name="import_profile"), default=ImportProfile.COMBINED
+    )
+    attributes_filename: Mapped[str | None] = mapped_column(String)
+    attributes_join_key: Mapped[str | None] = mapped_column(String)
+    geometry_join_key: Mapped[str | None] = mapped_column(String)
+    join_summary: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
 
 
 class LayerAttributeMapping(Base):
