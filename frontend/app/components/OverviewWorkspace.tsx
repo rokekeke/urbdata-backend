@@ -4,7 +4,7 @@ import { useState, type FormEvent } from "react";
 
 import { useCreateProject, type Project } from "../features/projects";
 import { useUploadLayer } from "../features/layers/hooks/useUploadLayer";
-import type { LayerType } from "../features/layers/api/uploadLayer";
+import type { ImportProfile, LayerType } from "../features/layers/api/uploadLayer";
 import type { ProjectLayer } from "../features/layers/api/listProjectLayers";
 import type { AppError } from "../lib/errors";
 
@@ -208,18 +208,44 @@ function UploadSlot({
   onOpenData: () => void;
 }) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isSplitProfile, setIsSplitProfile] = useState(false);
+  const [attributesFile, setAttributesFile] = useState<File | null>(null);
+  const [attributesJoinKey, setAttributesJoinKey] = useState("");
+  const [geometryJoinKey, setGeometryJoinKey] = useState("");
   const upload = useUploadLayer(projectId, versionId);
+
+  const splitFieldsComplete = !isSplitProfile || (attributesFile && attributesJoinKey.trim());
+
+  function resetForm() {
+    setSelectedFile(null);
+    setAttributesFile(null);
+    setAttributesJoinKey("");
+    setGeometryJoinKey("");
+    setIsSplitProfile(false);
+  }
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    if (!selectedFile || upload.isPending) return;
+    if (!selectedFile || !splitFieldsComplete || upload.isPending) return;
+    const importProfile: ImportProfile | undefined = isSplitProfile ? "split" : undefined;
     try {
-      await upload.mutateAsync({ layerType: slot.layerType, file: selectedFile });
-      setSelectedFile(null);
+      await upload.mutateAsync({
+        layerType: slot.layerType,
+        file: selectedFile,
+        importProfile,
+        attributesFile: isSplitProfile ? (attributesFile ?? undefined) : undefined,
+        attributesJoinKey: isSplitProfile ? attributesJoinKey.trim() : undefined,
+        geometryJoinKey: isSplitProfile ? geometryJoinKey.trim() || undefined : undefined,
+      });
+      resetForm();
     } catch {
       // o estado de erro do mutation ja fica visivel abaixo
     }
   }
+
+  const attributesInputId = `attributes-file-${slot.layerType}`;
+  const attributesJoinKeyId = `attributes-join-key-${slot.layerType}`;
+  const geometryJoinKeyId = `geometry-join-key-${slot.layerType}`;
 
   return (
     <div className="overview-upload-slot">
@@ -240,7 +266,57 @@ function UploadSlot({
           accept=".geojson,.json,application/geo+json"
           onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)}
         />
-        <button type="submit" className="secondary-button" disabled={!selectedFile || upload.isPending}>
+
+        <label className="overview-split-toggle">
+          <input
+            type="checkbox"
+            checked={isSplitProfile}
+            onChange={(event) => setIsSplitProfile(event.target.checked)}
+          />
+          <span>Os atributos vêm num arquivo CSV separado</span>
+        </label>
+
+        {isSplitProfile && (
+          <div className="overview-split-fields">
+            <label className="compact-field" htmlFor={attributesInputId}>
+              <span>Tabela de atributos (CSV)</span>
+              <input
+                id={attributesInputId}
+                type="file"
+                accept=".csv,text/csv"
+                onChange={(event) => setAttributesFile(event.target.files?.[0] ?? null)}
+              />
+            </label>
+            <label className="compact-field" htmlFor={attributesJoinKeyId}>
+              <span>Coluna do CSV usada como chave</span>
+              <input
+                id={attributesJoinKeyId}
+                value={attributesJoinKey}
+                onChange={(event) => setAttributesJoinKey(event.target.value)}
+                placeholder="Ex.: Name"
+                required
+              />
+            </label>
+            <details className="overview-split-advanced">
+              <summary>Avançado</summary>
+              <label className="compact-field" htmlFor={geometryJoinKeyId}>
+                <span>Property do GeoJSON usada como chave (padrão: id da feição)</span>
+                <input
+                  id={geometryJoinKeyId}
+                  value={geometryJoinKey}
+                  onChange={(event) => setGeometryJoinKey(event.target.value)}
+                  placeholder="Ex.: URBDATA_ID"
+                />
+              </label>
+            </details>
+          </div>
+        )}
+
+        <button
+          type="submit"
+          className="secondary-button"
+          disabled={!selectedFile || !splitFieldsComplete || upload.isPending}
+        >
           {upload.isPending ? "Enviando…" : existingLayer ? "Reenviar" : "Enviar"}
         </button>
       </form>
@@ -248,15 +324,63 @@ function UploadSlot({
       {upload.isError && (
         <div className="diagnostic-run-feedback error" role="alert">
           <span>{upload.error.message}</span>
+          <ErrorContextLists context={upload.error.context} />
         </div>
       )}
 
       {upload.isSuccess && (
         <div className="diagnostic-run-feedback success" role="status">
           <span>{upload.data.feature_count} elementos registrados.</span>
+          <JoinSummaryDetail joinSummary={upload.data.join_summary} />
           <button className="text-button" onClick={onOpenData}>Ver em Dados</button>
         </div>
       )}
     </div>
+  );
+}
+
+interface JoinSummaryShape {
+  geometry_count: number;
+  attribute_count: number;
+  matched: number;
+}
+
+function JoinSummaryDetail({ joinSummary }: { joinSummary: Record<string, unknown> | null }) {
+  if (!joinSummary) return null;
+  const summary = joinSummary as unknown as JoinSummaryShape;
+  return (
+    <span className="overview-join-summary">
+      {summary.matched} de {summary.geometry_count} geometrias combinadas com {summary.attribute_count}{" "}
+      linhas do CSV.
+    </span>
+  );
+}
+
+// f2.2/f6.1 (nota 53/54): a nota pede a lista explicita de chaves ausentes,
+// excedentes e duplicadas na resposta de erro - nao so a frase solta de
+// error.message. Generico o suficiente para cobrir qualquer chave de
+// contexto com lista nao vazia, sem acoplar a um codigo de erro especifico.
+const CONTEXT_LIST_LABELS: Record<string, string> = {
+  duplicate_geometry_keys: "Chaves duplicadas na geometria",
+  duplicate_attribute_keys: "Chaves duplicadas no CSV",
+  missing_geometry_keys: "Chaves do CSV sem geometria correspondente",
+  missing_attribute_keys: "Chaves da geometria sem linha correspondente no CSV",
+  empty_geometry_feature_indices: "Feições com chave vazia (posição no arquivo)",
+  empty_attribute_row_indices: "Linhas do CSV com chave vazia (posição no arquivo)",
+};
+
+function ErrorContextLists({ context }: { context: Record<string, unknown> }) {
+  const entries = Object.entries(context).filter(
+    (entry): entry is [string, unknown[]] => Array.isArray(entry[1]) && entry[1].length > 0,
+  );
+  if (entries.length === 0) return null;
+  return (
+    <ul className="overview-error-context-list">
+      {entries.map(([key, values]) => (
+        <li key={key}>
+          <strong>{CONTEXT_LIST_LABELS[key] ?? key}:</strong> {values.join(", ")}
+        </li>
+      ))}
+    </ul>
   );
 }

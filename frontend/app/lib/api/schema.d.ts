@@ -448,6 +448,16 @@ export interface components {
             /** Results */
             results: components["schemas"]["IndicatorResultOut"][];
         };
+        /** AttributeMappingWarningOut */
+        AttributeMappingWarningOut: {
+            /**
+             * Feature Id
+             * Format: uuid
+             */
+            feature_id: string;
+            /** Message */
+            message: string;
+        };
         /**
          * BasemapColorMode
          * @enum {string}
@@ -477,6 +487,14 @@ export interface components {
             layer_type: components["schemas"]["LayerType"];
             /** File */
             file: string;
+            /** @default combined */
+            import_profile: components["schemas"]["ImportProfile"];
+            /** Attributes File */
+            attributes_file?: string | null;
+            /** Attributes Join Key */
+            attributes_join_key?: string | null;
+            /** Geometry Join Key */
+            geometry_join_key?: string | null;
         };
         /** CatalogIndicatorOut */
         CatalogIndicatorOut: {
@@ -719,6 +737,14 @@ export interface components {
          */
         ImageResolution: "1x" | "2x";
         /**
+         * ImportProfile
+         * @description Whether a layer's attributes arrived embedded in the geometry file
+         *     (``combined``, the historical/default behaviour) or as a separate CSV
+         *     joined by key (``split`` - nota 53/54).
+         * @enum {string}
+         */
+        ImportProfile: "combined" | "split";
+        /**
          * IndicatorGranularity
          * @description Spatial granularity of the indicator's persisted value.
          * @enum {string}
@@ -794,6 +820,8 @@ export interface components {
             status: string;
             /** Features Updated */
             features_updated: number;
+            /** Warnings */
+            warnings: components["schemas"]["AttributeMappingWarningOut"][];
         };
         /** LayerAttributesOut */
         LayerAttributesOut: {
@@ -844,6 +872,17 @@ export interface components {
              * Format: date-time
              */
             uploaded_at: string;
+            import_profile: components["schemas"]["ImportProfile"];
+            /** Attributes Filename */
+            attributes_filename: string | null;
+            /** Attributes Join Key */
+            attributes_join_key: string | null;
+            /** Geometry Join Key */
+            geometry_join_key: string | null;
+            /** Join Summary */
+            join_summary: {
+                [key: string]: unknown;
+            } | null;
         };
         /**
          * LayerStatus

@@ -6,6 +6,7 @@ import type { AppError } from "../lib/errors";
 import type { LayerStyleConfig } from "../lib/types";
 import type { LayerAttributes } from "../features/layers/api/getLayerAttributes";
 import { useDeleteLayer } from "../features/layers/hooks/useDeleteLayer";
+import { useUpdateLayerAttributeMapping } from "../features/layers/hooks/useUpdateLayerAttributeMapping";
 import type { LayerGeojsonViewState } from "../features/layers/hooks/useLayerGeojsonQueries";
 import type { ProjectVersion } from "../features/projects";
 
@@ -196,6 +197,14 @@ export default function DataWorkspace({
                       </div>
                     ))}
                   </div>
+
+                  <AttributeMappingReview
+                    key={attributes.layer_id}
+                    projectId={projectId}
+                    layerId={attributes.layer_id}
+                    suggestedMapping={attributes.suggested_mapping}
+                    sourceFields={attributes.source_fields}
+                  />
                 </>
               ) : (
                 <div className="integration-state empty">Selecione uma camada para consultar seus atributos.</div>
@@ -205,6 +214,91 @@ export default function DataWorkspace({
         </>
       )}
     </div>
+  );
+}
+
+function AttributeMappingReview({
+  projectId,
+  layerId,
+  suggestedMapping,
+  sourceFields,
+}: {
+  projectId: string | null;
+  layerId: string;
+  suggestedMapping: Record<string, string | null>;
+  sourceFields: string[];
+}) {
+  const [selections, setSelections] = useState<Record<string, string | null>>(suggestedMapping);
+  const updateMapping = useUpdateLayerAttributeMapping(projectId);
+  const internalFields = Object.keys(suggestedMapping);
+
+  if (internalFields.length === 0) return null;
+
+  function handleChange(internalField: string, value: string) {
+    setSelections((previous) => ({ ...previous, [internalField]: value === "" ? null : value }));
+  }
+
+  return (
+    <details className="attribute-mapping-review">
+      <summary>Revisar mapeamento sugerido</summary>
+      <p className="panel-help">
+        Confirme ou troque a coluna de origem de cada campo interno antes de aplicar. A camada
+        já pode ser usada sem isso - é opcional.
+      </p>
+      <div className="attribute-mapping-table" role="table" aria-label="Mapeamento de atributos">
+        <div className="attribute-mapping-row header" role="row">
+          <span>Campo interno</span>
+          <span>Coluna de origem</span>
+        </div>
+        {internalFields.map((internalField) => {
+          const selectId = `mapping-${layerId}-${internalField}`;
+          return (
+            <div className="attribute-mapping-row" role="row" key={internalField}>
+              <label htmlFor={selectId}>{internalField}</label>
+              <select
+                id={selectId}
+                value={selections[internalField] ?? ""}
+                onChange={(event) => handleChange(internalField, event.target.value)}
+              >
+                <option value="">Não mapear</option>
+                {sourceFields.map((field) => (
+                  <option key={field} value={field}>
+                    {field}
+                  </option>
+                ))}
+              </select>
+            </div>
+          );
+        })}
+      </div>
+      <button
+        type="button"
+        className="secondary-button"
+        onClick={() => updateMapping.mutate({ layerId, mappings: selections })}
+        disabled={updateMapping.isPending}
+      >
+        {updateMapping.isPending ? "Aplicando…" : "Aplicar mapeamento"}
+      </button>
+
+      {updateMapping.isError && (
+        <div className="layer-runtime-message error" role="alert">
+          <span>{updateMapping.error.message}</span>
+        </div>
+      )}
+
+      {updateMapping.isSuccess && (
+        <div className="layer-runtime-message success" role="status">
+          <span>{updateMapping.data.features_updated} feições atualizadas.</span>
+          {updateMapping.data.warnings.length > 0 && (
+            <ul className="attribute-mapping-warnings">
+              {updateMapping.data.warnings.map((warning, index) => (
+                <li key={`${warning.feature_id}-${index}`}>{warning.message}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </details>
   );
 }
 

@@ -13,6 +13,11 @@ const layer: ProjectLayer = {
   feature_count: 14,
   status: "mapped",
   uploaded_at: "2026-07-20T12:00:00Z",
+  import_profile: "combined",
+  attributes_filename: null,
+  attributes_join_key: null,
+  geometry_join_key: null,
+  join_summary: null,
 };
 
 const attributes: LayerAttributes = {

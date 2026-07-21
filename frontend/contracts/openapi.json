@@ -1674,6 +1674,25 @@
         ],
         "title": "AnalyzeResponse"
       },
+      "AttributeMappingWarningOut": {
+        "properties": {
+          "feature_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Feature Id"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "feature_id",
+          "message"
+        ],
+        "title": "AttributeMappingWarningOut"
+      },
       "BasemapColorMode": {
         "type": "string",
         "enum": [
@@ -1757,6 +1776,44 @@
             "type": "string",
             "contentMediaType": "application/octet-stream",
             "title": "File"
+          },
+          "import_profile": {
+            "$ref": "#/components/schemas/ImportProfile",
+            "default": "combined"
+          },
+          "attributes_file": {
+            "anyOf": [
+              {
+                "type": "string",
+                "contentMediaType": "application/octet-stream"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attributes File"
+          },
+          "attributes_join_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attributes Join Key"
+          },
+          "geometry_join_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Geometry Join Key"
           }
         },
         "type": "object",
@@ -2382,6 +2439,15 @@
         ],
         "title": "ImageResolution"
       },
+      "ImportProfile": {
+        "type": "string",
+        "enum": [
+          "combined",
+          "split"
+        ],
+        "title": "ImportProfile",
+        "description": "Whether a layer's attributes arrived embedded in the geometry file\n(``combined``, the historical/default behaviour) or as a separate CSV\njoined by key (``split`` - nota 53/54)."
+      },
       "IndicatorGranularity": {
         "type": "string",
         "enum": [
@@ -2571,13 +2637,21 @@
           "features_updated": {
             "type": "integer",
             "title": "Features Updated"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/AttributeMappingWarningOut"
+            },
+            "type": "array",
+            "title": "Warnings"
           }
         },
         "type": "object",
         "required": [
           "layer_id",
           "status",
-          "features_updated"
+          "features_updated",
+          "warnings"
         ],
         "title": "LayerAttributeMappingOut"
       },
@@ -2698,6 +2772,54 @@
             "type": "string",
             "format": "date-time",
             "title": "Uploaded At"
+          },
+          "import_profile": {
+            "$ref": "#/components/schemas/ImportProfile"
+          },
+          "attributes_filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attributes Filename"
+          },
+          "attributes_join_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attributes Join Key"
+          },
+          "geometry_join_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Geometry Join Key"
+          },
+          "join_summary": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Join Summary"
           }
         },
         "type": "object",
@@ -2709,7 +2831,12 @@
           "geometry_type",
           "feature_count",
           "status",
-          "uploaded_at"
+          "uploaded_at",
+          "import_profile",
+          "attributes_filename",
+          "attributes_join_key",
+          "geometry_join_key",
+          "join_summary"
         ],
         "title": "LayerOut"
       },
