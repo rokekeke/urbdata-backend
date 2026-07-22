@@ -14,5 +14,6 @@ class CatalogIndicatorOut(BaseModel):
     feature_key: FeatureKey | None
     value_shape: ValueShape
     category_feature_property: str | None
+    internal: bool
     required_layers: list[str]
     optional_layers: list[str]

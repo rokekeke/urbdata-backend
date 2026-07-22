@@ -2,11 +2,39 @@ name: tests
 
 on:
   push:
+    paths:
+      - "app/**"
+      - "tests/**"
+      - "migrations/**"
+      - "pyproject.toml"
+      - "alembic.ini"
+      - ".github/workflows/tests.yml"
   pull_request:
+    paths:
+      - "app/**"
+      - "tests/**"
+      - "migrations/**"
+      - "pyproject.toml"
+      - "alembic.ini"
+      - ".github/workflows/tests.yml"
 
 jobs:
   quality:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:16-3.5
+        env:
+          POSTGRES_DB: urbdata
+          POSTGRES_USER: urbdata
+          POSTGRES_PASSWORD: urbdata
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U urbdata -d urbdata"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -16,5 +44,33 @@ jobs:
       - run: python -m pip install --upgrade pip
       - run: pip install -e ".[dev]"
       - run: ruff check .
-      - run: mypy app
-      - run: pytest --cov=app --cov-report=term-missing
+      - run: mypy app tests
+
+      - name: Apply migrations to head
+        env:
+          URBDATA_DATABASE_URL: postgresql+psycopg://urbdata:urbdata@localhost:5432/urbdata
+        run: alembic upgrade head
+
+      # Unit + integration suite against the migrated database. The one
+      # exception is test_migrations.py's destructive cycle test (below) -
+      # it drives its own upgrade/downgrade/upgrade sequence and would
+      # corrupt the schema every other test in this run depends on.
+      - name: Run unit and integration tests
+        env:
+          URBDATA_TEST_DATABASE_URL: postgresql+psycopg://urbdata:urbdata@localhost:5432/urbdata
+        run: >-
+          pytest tests/unit tests/integration
+          --deselect tests/integration/test_migrations.py::test_fresh_and_stamped_legacy_database_converge_to_head
+          --cov=app --cov-report=term-missing
+
+      - name: Create isolated blank database for the migration-cycle test
+        env:
+          PGPASSWORD: urbdata
+        run: |
+          psql -h localhost -U urbdata -d urbdata -c "DROP DATABASE IF EXISTS urbdata_migration_test;"
+          psql -h localhost -U urbdata -d urbdata -c "CREATE DATABASE urbdata_migration_test;"
+
+      - name: Run migration-cycle test (blank database)
+        env:
+          URBDATA_TEST_DATABASE_URL: postgresql+psycopg://urbdata:urbdata@localhost:5432/urbdata_migration_test
+        run: pytest tests/integration/test_migrations.py

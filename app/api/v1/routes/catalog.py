@@ -32,6 +32,7 @@ def list_indicators() -> list[CatalogIndicatorOut]:
                 feature_key=presentation.feature_key,
                 value_shape=presentation.value_shape,
                 category_feature_property=presentation.category_feature_property,
+                internal=presentation.internal,
                 required_layers=list(definition.required_layers),
                 optional_layers=list(definition.optional_layers),
             )
