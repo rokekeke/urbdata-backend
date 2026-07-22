@@ -142,6 +142,8 @@ def test_all_three_themes_run_together_against_one_territorio_layer() -> None:
         "land_use.diversity_shannon",
         "green_areas.total_area",
         "green_areas.percent_of_project",
+        "green_areas.total_area_with_app",
+        "green_areas.percent_of_project_with_app",
         "quadras.stats",
         "quadras.compactness",
         "quadras.min_rotated_rectangle",
@@ -187,6 +189,27 @@ def test_all_three_themes_run_together_against_one_territorio_layer() -> None:
     # both green_areas indicators that consume it.
     assert any(w.code == "area_reference_divergence" for w in green_total.warnings)
     assert any(w.code == "area_reference_divergence" for w in green_percent.warnings)
+
+    # green_areas *_with_app: additive over the AVL-only readings - APP
+    # brings its own geometric area in (no reference override), so both
+    # with-APP results must sit strictly above their AVL-only siblings, and
+    # both feature ids must contribute.
+    green_total_with_app = by_code["green_areas.total_area_with_app"]
+    assert set(green_total_with_app.contributing_feature_ids) == {
+        feature_ids["avl"],
+        feature_ids["app"],
+    }
+    assert isinstance(green_total_with_app.raw_value, float)
+    assert green_total_with_app.raw_value > green_total.raw_value
+
+    green_percent_with_app = by_code["green_areas.percent_of_project_with_app"]
+    assert isinstance(green_percent_with_app.raw_value, float)
+    assert 0 < green_percent_with_app.raw_value < 1
+    assert green_percent_with_app.raw_value > green_percent.raw_value
+
+    # AVL's divergence still surfaces even once APP joins the reading.
+    assert any(w.code == "area_reference_divergence" for w in green_total_with_app.warnings)
+    assert any(w.code == "area_reference_divergence" for w in green_percent_with_app.warnings)
 
     # quadras: Q1 dissolves two adjacent lots into one outline, Q2 has one.
     # APP never had a quadra_id and isn't a Lote either way, so it never

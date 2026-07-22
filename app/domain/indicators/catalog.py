@@ -21,7 +21,9 @@ from app.domain.indicators.green_areas import (
 )
 from app.domain.indicators.green_areas import (
     calculate_green_area_percent_from_context,
+    calculate_green_area_percent_with_app_from_context,
     calculate_total_green_area_from_context,
+    calculate_total_green_area_with_app_from_context,
 )
 from app.domain.indicators.land_use import (
     TERRITORIO_LAYER as LAND_USE_TERRITORIO_LAYER,
@@ -193,6 +195,28 @@ GREEN_AREAS_PERCENT_OF_PROJECT = IndicatorDefinition(
     optional_layers=(),
     dependencies=(),
     calculator=calculate_green_area_percent_from_context,
+)
+
+GREEN_AREAS_TOTAL_AREA_WITH_APP = IndicatorDefinition(
+    code="green_areas.total_area_with_app",
+    theme="green_areas",
+    formula_version="1.0.0",
+    unit="m2",
+    required_layers=(GREEN_AREAS_TERRITORIO_LAYER,),
+    optional_layers=(),
+    dependencies=(),
+    calculator=calculate_total_green_area_with_app_from_context,
+)
+
+GREEN_AREAS_PERCENT_OF_PROJECT_WITH_APP = IndicatorDefinition(
+    code="green_areas.percent_of_project_with_app",
+    theme="green_areas",
+    formula_version="1.0.0",
+    unit="ratio",
+    required_layers=(GREEN_AREAS_TERRITORIO_LAYER, PERIMETER_LAYER),
+    optional_layers=(),
+    dependencies=(),
+    calculator=calculate_green_area_percent_with_app_from_context,
 )
 
 QUADRAS_STATS = IndicatorDefinition(
@@ -383,6 +407,8 @@ ALL_DEFINITIONS: tuple[IndicatorDefinition, ...] = (
     LAND_USE_DIVERSITY_SHANNON,
     GREEN_AREAS_TOTAL_AREA,
     GREEN_AREAS_PERCENT_OF_PROJECT,
+    GREEN_AREAS_TOTAL_AREA_WITH_APP,
+    GREEN_AREAS_PERCENT_OF_PROJECT_WITH_APP,
     QUADRAS_STATS,
     QUADRAS_COMPACTNESS,
     QUADRAS_MIN_ROTATED_RECTANGLE,

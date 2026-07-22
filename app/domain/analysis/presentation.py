@@ -80,6 +80,13 @@ class IndicatorPresentation:
     # the slug - clients must normalize before joining, same rule as
     # `normalize_key`.
     category_feature_property: str | None = field(default=None, kw_only=True)
+    # An internal metric feeds a map representation and/or a warning
+    # (e.g. quadras.face_length_score paints the map and raises
+    # block_face_out_of_compliance), but is not itself a highlighted
+    # dashboard card - parecer da revisao teorica, nota Obsidian 71/87/88
+    # (22/07/2026). Still fully queryable via GET /catalog/indicators; the
+    # frontend is what decides not to list it among the theme's cards.
+    internal: bool = field(default=False, kw_only=True)
 
     def __post_init__(self) -> None:
         if not self.display_name or not self.description:
@@ -191,6 +198,19 @@ PRESENTATIONS: dict[str, IndicatorPresentation] = {
         _PROJETO,
         value_shape=_SCALAR,
     ),
+    "green_areas.total_area_with_app": _P(
+        "Área verde total (com APP)",
+        "Soma das áreas AVL e APP do projeto, em metros quadrados - "
+        "mostra o potencial paisagístico que a APP acrescenta.",
+        _PROJETO,
+        value_shape=_SCALAR,
+    ),
+    "green_areas.percent_of_project_with_app": _P(
+        "Área verde sobre o projeto (com APP)",
+        "Razão entre a área verde (AVL+APP) e a área bruta do projeto.",
+        _PROJETO,
+        value_shape=_SCALAR,
+    ),
     "quadras.stats": _P(
         "Estatísticas por quadra",
         "Área, perímetro e lotes contribuintes de cada quadra derivada.",
@@ -219,6 +239,7 @@ PRESENTATIONS: dict[str, IndicatorPresentation] = {
         _POR_FEICAO,
         FeatureKey.QUADRA_ID,
         value_shape=_FEATURE_SERIES,
+        internal=True,
     ),
     "road_network.total_length": _P(
         "Extensão viária total",
