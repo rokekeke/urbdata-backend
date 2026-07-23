@@ -120,6 +120,17 @@ def test_density_and_road_network_round_trip_through_the_real_api() -> None:
                     ca="0",
                     parcelavel="sim",
                 ),
+                _feature(
+                    "Polygon",
+                    [[
+                        [-52.0008, -27.0001],
+                        [-51.9992, -27.0001],
+                        [-51.9992, -26.9998],
+                        [-52.0008, -26.9998],
+                        [-52.0008, -27.0001],
+                    ]],
+                    macro="Sistema Viario",
+                ),
             ],
         )
         _map_attributes(
@@ -295,7 +306,11 @@ def test_representation_options_aggregate_in_the_database() -> None:
         body = response.json()
 
         assert body["feature_count"] == 3
-        assert body["compatible_indicators"] == ["lots.frontage_length"]
+        assert body["compatible_indicators"] == [
+            "lots.distance_to_green_area",
+            "lots.distance_to_non_residential_use",
+            "lots.frontage_length",
+        ]
         fields = {entry["field"]: entry for entry in body["fields"]}
 
         macro_source = fields["macro"]
