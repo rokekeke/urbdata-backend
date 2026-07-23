@@ -275,3 +275,98 @@ def calculate_quadra_face_length_score_from_context(
     return calculate_quadra_face_length_score(
         quadras, metric_crs=context.metric_crs_value(), warnings=quadra_warnings
     )
+
+
+def _min_rotated_rectangle_orientation_deg(geometry: BaseGeometry) -> float:
+    """Deviation, in degrees, of the minimum rotated rectangle's longer
+    edge (the same "comprimento" `_min_rotated_rectangle_dimensions`
+    reports) from the geographic East-West axis. 0 = perfectly aligned
+    with East-West, 90 = perpendicular (aligned with North-South instead).
+
+    A line has no inherent direction, so the raw azimuth (which ranges
+    -180..180 depending on which end of the edge is read first) is folded
+    twice: once mod 180 to collapse the two opposite directions of the
+    same line onto one value, then again onto the shorter arc to 90 to
+    express "how far from the East-West line" rather than "how far from
+    East specifically" - a rectangle whose edge sits at 170 degrees from
+    east is really just 10 degrees off from lying along the west
+    direction of that same line.
+
+    For a near-square quadra the two edges are nearly the same length, so
+    which one gets picked as "the longer edge" (and therefore which
+    orientation gets reported) is unstable - a documented approximation
+    (same spirit as `_face_length_score`'s face-length proxy), not a data
+    problem worth a runtime warning.
+
+    Treats the metric CRS's grid axes as true East-West/North-South (no
+    correction for grid convergence) - negligible at the scale of a single
+    loteamento, and consistent with the rest of the engine not correcting
+    for it either.
+    """
+    rectangle = geometry.minimum_rotated_rectangle
+    corners = list(rectangle.exterior.coords)
+    edge_a = (corners[1][0] - corners[0][0], corners[1][1] - corners[0][1])
+    edge_b = (corners[2][0] - corners[1][0], corners[2][1] - corners[1][1])
+    edge_a_length = math.dist(corners[0], corners[1])
+    edge_b_length = math.dist(corners[1], corners[2])
+    major_axis = edge_a if edge_a_length >= edge_b_length else edge_b
+    angle_deg = math.degrees(math.atan2(major_axis[1], major_axis[0])) % 180.0
+    return min(angle_deg, 180.0 - angle_deg)
+
+
+def calculate_quadra_orientation(
+    quadras: Sequence[QuadraGeometry],
+    *,
+    metric_crs: str | int,
+    warnings: tuple[AnalysisWarning, ...] = (),
+) -> IndicatorCalculation:
+    """CTE/Methafora + LEED-ND "Conforto termico": desvio, em graus, do
+    eixo maior de cada quadra em relacao ao eixo Leste-Oeste geografico (0
+    = alinhado, 90 = perpendicular). Reaproveita o mesmo retangulo minimo
+    rotacionado de `quadras.min_rotated_rectangle`
+    (`_min_rotated_rectangle_orientation_deg`), sem alterar o contrato
+    daquele indicador ja registrado - mesmo padrao de reuso independente
+    que `calculate_quadra_face_length_score` ja usa para "comprimento".
+
+    Guarda o angulo bruto, nao um sim/nao ja comparado contra um limiar: a
+    certificacao pede 75% das quadras a ate 15 graus, mas esse corte e uma
+    leitura de relatorio sobre o angulo, nao parte da formula - mesmo
+    espirito de guardar o valor bruto e deixar a interpretacao para a
+    apresentacao (nota Obsidian 88/90), assim o mesmo numero serve mesmo
+    se outra certificacao pedir um limiar diferente.
+    """
+    orientation = {
+        quadra.quadra_id: _min_rotated_rectangle_orientation_deg(quadra.geometry)
+        for quadra in quadras
+    }
+    return IndicatorCalculation(
+        indicator_code="quadras.orientation",
+        theme="quadras",
+        formula_version="1.0.0",
+        raw_value=orientation,
+        unit="graus",
+        metric_crs=str(metric_crs),
+        source_layers=(TERRITORIO_LAYER,),
+        contributing_feature_ids=_quadra_contributing_ids(quadras),
+        parameters={
+            "metric_crs": str(metric_crs),
+            "metodo": (
+                "desvio do eixo maior do retangulo minimo rotacionado em "
+                "relacao ao eixo Leste-Oeste, dobrado para a faixa 0-90"
+            ),
+            "referencia": (
+                "CTE/Methafora e LEED-ND: 75% das quadras a ate 15 graus do eixo Leste-Oeste"
+            ),
+        },
+        warnings=warnings,
+    )
+
+
+def calculate_quadra_orientation_from_context(
+    context: GeospatialContext,
+) -> IndicatorCalculation:
+    """`IndicatorDefinition.calculator` for `quadras.orientation`."""
+    quadras, quadra_warnings = quadras_from_context(context)
+    return calculate_quadra_orientation(
+        quadras, metric_crs=context.metric_crs_value(), warnings=quadra_warnings
+    )

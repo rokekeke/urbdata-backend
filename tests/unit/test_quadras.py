@@ -2,6 +2,7 @@ import math
 import uuid
 
 import pytest
+from shapely.affinity import rotate
 from shapely.geometry import Polygon
 
 from app.domain.indicators.quadras import (
@@ -9,6 +10,7 @@ from app.domain.indicators.quadras import (
     calculate_quadra_compactness,
     calculate_quadra_face_length_score,
     calculate_quadra_min_rotated_rectangle,
+    calculate_quadra_orientation,
     calculate_quadra_stats,
 )
 
@@ -145,3 +147,70 @@ class TestQuadraFaceLengthScore:
 
         assert base_warning in result.warnings
         assert any(w.code == "block_face_out_of_compliance" for w in result.warnings)
+
+
+class TestQuadraOrientation:
+    def test_axis_aligned_rectangle_reports_zero_deviation(self) -> None:
+        # RECT_50X20's longer edge runs from (0,0) to (50,0) - due east.
+        quadras = [_quadra("Q1", RECT_50X20)]
+
+        result = calculate_quadra_orientation(quadras, metric_crs=31982)
+
+        assert result.indicator_code == "quadras.orientation"
+        assert result.unit == "graus"
+        assert result.raw_value == {"Q1": pytest.approx(0.0, abs=1e-9)}
+
+    def test_perpendicular_rectangle_reports_ninety_degrees(self) -> None:
+        quadras = [_quadra("Q1", rotate(RECT_50X20, 90, origin=(0, 0)))]
+
+        result = calculate_quadra_orientation(quadras, metric_crs=31982)
+
+        assert result.raw_value == {"Q1": pytest.approx(90.0)}
+
+    def test_forty_five_degree_rectangle_reports_forty_five(self) -> None:
+        quadras = [_quadra("Q1", rotate(RECT_50X20, 45, origin=(0, 0)))]
+
+        result = calculate_quadra_orientation(quadras, metric_crs=31982)
+
+        assert result.raw_value == {"Q1": pytest.approx(45.0)}
+
+    def test_matches_the_certification_fifteen_degree_threshold(self) -> None:
+        # CTE/Methafora and LEED-ND both check "quadra axis within 15
+        # degrees of East-West" - this is the exact boundary value.
+        quadras = [_quadra("Q1", rotate(RECT_50X20, 15, origin=(0, 0)))]
+
+        result = calculate_quadra_orientation(quadras, metric_crs=31982)
+
+        assert result.raw_value == {"Q1": pytest.approx(15.0)}
+
+    def test_folds_angles_past_ninety_to_the_shorter_arc(self) -> None:
+        # A rectangle at 170 degrees is the same line as one at 10 degrees
+        # (a line has no direction) - this exercises the wraparound fold,
+        # not just a "nice" angle that would pass even with buggy math.
+        quadras = [_quadra("Q1", rotate(RECT_50X20, 170, origin=(0, 0)))]
+
+        result = calculate_quadra_orientation(quadras, metric_crs=31982)
+
+        assert result.raw_value == {"Q1": pytest.approx(10.0)}
+
+    def test_axis_aligned_square_pins_shapelys_deterministic_tie_break(self) -> None:
+        # SQUARE_100M's two edges are equally "major" - Shapely's
+        # minimum_rotated_rectangle happens to return the north-south edge
+        # first for this shape, so the tie resolves to 90 here. This test
+        # pins that deterministic (if not hand-derivable) behavior, not a
+        # claim that 90 is "the" correct orientation for a square - either
+        # axis is equally valid when the two edges are exactly equal.
+        quadras = [_quadra("Q1", SQUARE_100M)]
+
+        result = calculate_quadra_orientation(quadras, metric_crs=31982)
+
+        assert result.raw_value == {"Q1": pytest.approx(90.0)}
+
+    def test_rotated_square_gives_the_same_deviation_regardless_of_tie_break(self) -> None:
+        # Once genuinely rotated 45 degrees, both edges fold to the same
+        # deviation - the tie-break choice stops mattering.
+        quadras = [_quadra("Q1", rotate(SQUARE_100M, 45, origin=(0, 0)))]
+
+        result = calculate_quadra_orientation(quadras, metric_crs=31982)
+
+        assert result.raw_value == {"Q1": pytest.approx(45.0)}

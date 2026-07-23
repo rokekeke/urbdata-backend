@@ -6,6 +6,7 @@ space-syntax unlink handling happen only in this per-analysis representation.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from itertools import pairwise
 from uuid import UUID
@@ -86,6 +87,99 @@ class RoadNetwork:
             if {RoadStatus.EXISTING.value, RoadStatus.PROPOSED.value} <= statuses:
                 count += 1
         return count
+
+
+@dataclass(frozen=True, slots=True)
+class NetworkNodeIndex:
+    """Spatial index over a road network's graph nodes, built once and
+    reused for repeated nearest-node lookups.
+
+    Snapping an arbitrary point onto the network means finding its nearest
+    graph node here, not the nearest point along an edge - a documented
+    simplification. Edges in this graph are already noded at real
+    intersections (`build_road_network`), so the difference between "the
+    nearest node" and "the nearest point on the nearest edge" is small
+    relative to the walking-distance thresholds this feeds (400-800m in
+    the certification credits it serves, notas Obsidian 89/90).
+    """
+
+    nodes: tuple[NodeKey, ...]
+    tree: STRtree
+
+    def nearest(self, point: Point) -> tuple[NodeKey, float] | None:
+        """The closest node to *point*, and the straight-line "last mile"
+        distance to reach it. `None` when the network has no nodes at
+        all."""
+        if not self.nodes:
+            return None
+        index = int(self.tree.nearest(point))
+        node = self.nodes[index]
+        return node, float(point.distance(Point(node)))
+
+
+def build_node_index(network: RoadNetwork) -> NetworkNodeIndex:
+    nodes = tuple(network.graph.nodes)
+    return NetworkNodeIndex(nodes=nodes, tree=STRtree([Point(node) for node in nodes]))
+
+
+@dataclass(frozen=True, slots=True)
+class NetworkTargets:
+    """A set of target points snapped onto the network once (via a shared
+    `NetworkNodeIndex`), so many origin points can each be scored against
+    the same targets without re-snapping every time. Only the closest
+    target's last-mile distance is kept per node - that is all
+    `distance_to_nearest_target` ever needs to know."""
+
+    node_last_mile_m: dict[NodeKey, float]
+
+
+def snap_targets(index: NetworkNodeIndex, targets: Sequence[Point]) -> NetworkTargets:
+    node_last_mile_m: dict[NodeKey, float] = {}
+    for target in targets:
+        snapped = index.nearest(target)
+        if snapped is None:
+            continue
+        node, last_mile = snapped
+        if node not in node_last_mile_m or last_mile < node_last_mile_m[node]:
+            node_last_mile_m[node] = last_mile
+    return NetworkTargets(node_last_mile_m=node_last_mile_m)
+
+
+def distance_to_nearest_target(
+    network: RoadNetwork,
+    index: NetworkNodeIndex,
+    origin: Point,
+    targets: NetworkTargets,
+) -> float | None:
+    """Shortest distance, in meters, from *origin* to the nearest snapped
+    target, traveling the road network rather than a straight line - both
+    ends snapped to their nearest graph node (`NetworkNodeIndex.nearest`),
+    the path between them found via Dijkstra (`networkx`, weighted by the
+    same `length_m` edge attribute every other road_network indicator
+    already sums).
+
+    `None` when there is no target to reach, no network to route on, or
+    *origin*'s component of the graph cannot reach any node a target is
+    snapped to (a disconnected network - see `disconnected_road_network`
+    warnings from `build_road_network`).
+    """
+    if not targets.node_last_mile_m:
+        return None
+    snapped = index.nearest(origin)
+    if snapped is None:
+        return None
+    origin_node, origin_last_mile = snapped
+    path_lengths = nx.single_source_dijkstra_path_length(
+        network.graph, origin_node, weight="length_m"
+    )
+    best: float | None = None
+    for node, target_last_mile in targets.node_last_mile_m.items():
+        if node not in path_lengths:
+            continue
+        total = origin_last_mile + path_lengths[node] + target_last_mile
+        if best is None or total < best:
+            best = total
+    return best
 
 
 def _node_key(point: Point) -> NodeKey:

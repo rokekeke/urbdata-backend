@@ -148,6 +148,7 @@ def test_all_three_themes_run_together_against_one_territorio_layer() -> None:
         "quadras.compactness",
         "quadras.min_rotated_rectangle",
         "quadras.face_length_score",
+        "quadras.orientation",
     }
 
     # territorial: full inventory includes every macroarea (BT-043)...

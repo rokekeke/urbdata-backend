@@ -65,7 +65,11 @@ class TestRecommendMode:
 
 class TestCompatibleIndicators:
     def test_territorio_gets_feature_id_indicators(self) -> None:
-        assert compatible_indicator_codes("territorio") == ("lots.frontage_length",)
+        assert compatible_indicator_codes("territorio") == (
+            "lots.distance_to_green_area",
+            "lots.distance_to_non_residential_use",
+            "lots.frontage_length",
+        )
 
     def test_quadras_gets_quadra_id_indicators(self) -> None:
         codes = compatible_indicator_codes("quadras")

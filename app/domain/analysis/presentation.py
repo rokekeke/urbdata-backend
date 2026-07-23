@@ -241,6 +241,14 @@ PRESENTATIONS: dict[str, IndicatorPresentation] = {
         value_shape=_FEATURE_SERIES,
         internal=True,
     ),
+    "quadras.orientation": _P(
+        "Orientação da quadra",
+        "Desvio, em graus, do eixo maior de cada quadra em relação ao "
+        "eixo Leste-Oeste geográfico (0 = alinhado, 90 = perpendicular).",
+        _POR_FEICAO,
+        FeatureKey.QUADRA_ID,
+        value_shape=_FEATURE_SERIES,
+    ),
     "road_network.total_length": _P(
         "Extensão viária total",
         "Soma dos comprimentos dos trechos do eixo viário, em metros.",
@@ -283,6 +291,13 @@ PRESENTATIONS: dict[str, IndicatorPresentation] = {
         _PROJETO,
         value_shape=_SCALAR,
     ),
+    "road_network.max_boundary_gap": _P(
+        "Maior intervalo sem cruzamento no limite",
+        "Maior distância, em metros, entre pontos onde a rede viária "
+        "cruza o limite do projeto, percorrendo todo o perímetro.",
+        _PROJETO,
+        value_shape=_SCALAR,
+    ),
     "density.max_computable_area": _P(
         "Potencial construtivo máximo",
         "Soma de área do lote × CA máximo dos lotes com CA válido, "
@@ -301,6 +316,37 @@ PRESENTATIONS: dict[str, IndicatorPresentation] = {
         "Fração da área dos lotes coberta por CA válido.",
         _PROJETO,
         value_shape=_SCALAR,
+    ),
+    "density.built_open_ratio": _P(
+        "Relação espaço construído / espaço aberto",
+        "Potencial construtivo (área do lote × CA) dividido pela área do "
+        "território que não é Lote (sistema viário, áreas verdes, ACI).",
+        _PROJETO,
+        value_shape=_SCALAR,
+    ),
+    "density.non_residential_ca": _P(
+        "CA médio não residencial",
+        "Área construída (CA × área do lote) dividida pela área dos "
+        "lotes, restrito a lotes de uso comercial, serviços, "
+        "institucional ou industrial.",
+        _PROJETO,
+        value_shape=_SCALAR,
+    ),
+    "lots.distance_to_non_residential_use": _P(
+        "Distância até uso não residencial",
+        "Distância de rede (não em linha reta) do lote residencial/misto "
+        "até o lote de uso não residencial mais próximo, em metros.",
+        _POR_FEICAO,
+        FeatureKey.FEATURE_ID,
+        value_shape=_FEATURE_SERIES,
+    ),
+    "lots.distance_to_green_area": _P(
+        "Distância até área verde",
+        "Distância de rede (não em linha reta) do lote residencial/misto "
+        "até a área verde (AVL) mais próxima, em metros.",
+        _POR_FEICAO,
+        FeatureKey.FEATURE_ID,
+        value_shape=_FEATURE_SERIES,
     ),
     "lots.frontage_length": _P(
         "Testada por lote",

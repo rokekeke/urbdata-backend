@@ -13,7 +13,7 @@ class TestCatalogIndicatorsEndpoint:
 
         assert response.status_code == 200
         body = response.json()
-        assert len(body) == 29
+        assert len(body) == 35
         assert {entry["theme"] for entry in body} == {
             "territorial",
             "land_use",

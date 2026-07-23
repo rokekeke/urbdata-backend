@@ -12,9 +12,11 @@ from app.domain.indicators.density import (
     TERRITORIO_LAYER as DENSITY_TERRITORIO_LAYER,
 )
 from app.domain.indicators.density import (
+    calculate_built_open_ratio_from_context,
     calculate_ca_coverage_from_context,
     calculate_lot_count_with_ca_from_context,
     calculate_max_computable_area_from_context,
+    calculate_non_residential_ca_from_context,
 )
 from app.domain.indicators.green_areas import (
     TERRITORIO_LAYER as GREEN_AREAS_TERRITORIO_LAYER,
@@ -38,6 +40,8 @@ from app.domain.indicators.lots import (
     TERRITORIO_LAYER as LOTS_TERRITORIO_LAYER,
 )
 from app.domain.indicators.lots import (
+    calculate_distance_to_green_area_from_context,
+    calculate_distance_to_non_residential_use_from_context,
     calculate_lot_frontage_from_context,
     calculate_parceling_efficiency_from_context,
 )
@@ -48,6 +52,7 @@ from app.domain.indicators.quadras import (
     calculate_quadra_compactness_from_context,
     calculate_quadra_face_length_score_from_context,
     calculate_quadra_min_rotated_rectangle_from_context,
+    calculate_quadra_orientation_from_context,
     calculate_quadra_stats_from_context,
 )
 from app.domain.indicators.roads import (
@@ -60,6 +65,7 @@ from app.domain.indicators.roads import (
     calculate_intersection_count_from_context,
     calculate_intersection_density_from_context,
     calculate_link_node_ratio_from_context,
+    calculate_max_boundary_gap_from_context,
     calculate_proposed_connection_count_from_context,
     calculate_proposed_length_from_context,
     calculate_total_length_from_context,
@@ -263,6 +269,17 @@ QUADRAS_FACE_LENGTH_SCORE = IndicatorDefinition(
     calculator=calculate_quadra_face_length_score_from_context,
 )
 
+QUADRAS_ORIENTATION = IndicatorDefinition(
+    code="quadras.orientation",
+    theme="quadras",
+    formula_version="1.0.0",
+    unit="graus",
+    required_layers=(QUADRAS_TERRITORIO_LAYER,),
+    optional_layers=(),
+    dependencies=(),
+    calculator=calculate_quadra_orientation_from_context,
+)
+
 ROAD_TOTAL_LENGTH = IndicatorDefinition(
     code="road_network.total_length",
     theme="road_network",
@@ -340,6 +357,17 @@ ROAD_PROPOSED_CONNECTION_COUNT = IndicatorDefinition(
     calculator=calculate_proposed_connection_count_from_context,
 )
 
+ROAD_MAX_BOUNDARY_GAP = IndicatorDefinition(
+    code="road_network.max_boundary_gap",
+    theme="road_network",
+    formula_version="1.0.0",
+    unit="m",
+    required_layers=(ROAD_LAYER, ROAD_PERIMETER_LAYER),
+    optional_layers=(UNLINK_LAYER,),
+    dependencies=(),
+    calculator=calculate_max_boundary_gap_from_context,
+)
+
 DENSITY_MAX_COMPUTABLE_AREA = IndicatorDefinition(
     code="density.max_computable_area",
     theme="density",
@@ -373,6 +401,28 @@ DENSITY_CA_COVERAGE = IndicatorDefinition(
     calculator=calculate_ca_coverage_from_context,
 )
 
+DENSITY_BUILT_OPEN_RATIO = IndicatorDefinition(
+    code="density.built_open_ratio",
+    theme="density",
+    formula_version="1.0.0",
+    unit="ratio",
+    required_layers=(DENSITY_TERRITORIO_LAYER,),
+    optional_layers=(),
+    dependencies=(),
+    calculator=calculate_built_open_ratio_from_context,
+)
+
+DENSITY_NON_RESIDENTIAL_CA = IndicatorDefinition(
+    code="density.non_residential_ca",
+    theme="density",
+    formula_version="1.0.0",
+    unit="ratio",
+    required_layers=(DENSITY_TERRITORIO_LAYER,),
+    optional_layers=(),
+    dependencies=(),
+    calculator=calculate_non_residential_ca_from_context,
+)
+
 LOTS_FRONTAGE_LENGTH = IndicatorDefinition(
     code="lots.frontage_length",
     theme="lots",
@@ -382,6 +432,28 @@ LOTS_FRONTAGE_LENGTH = IndicatorDefinition(
     optional_layers=(),
     dependencies=(),
     calculator=calculate_lot_frontage_from_context,
+)
+
+LOTS_DISTANCE_TO_NON_RESIDENTIAL_USE = IndicatorDefinition(
+    code="lots.distance_to_non_residential_use",
+    theme="lots",
+    formula_version="1.0.0",
+    unit="m",
+    required_layers=(LOTS_TERRITORIO_LAYER, ROAD_LAYER),
+    optional_layers=(UNLINK_LAYER,),
+    dependencies=(),
+    calculator=calculate_distance_to_non_residential_use_from_context,
+)
+
+LOTS_DISTANCE_TO_GREEN_AREA = IndicatorDefinition(
+    code="lots.distance_to_green_area",
+    theme="lots",
+    formula_version="1.0.0",
+    unit="m",
+    required_layers=(LOTS_TERRITORIO_LAYER, ROAD_LAYER),
+    optional_layers=(UNLINK_LAYER,),
+    dependencies=(),
+    calculator=calculate_distance_to_green_area_from_context,
 )
 
 LOTS_PARCELING_EFFICIENCY = IndicatorDefinition(
@@ -413,6 +485,7 @@ ALL_DEFINITIONS: tuple[IndicatorDefinition, ...] = (
     QUADRAS_COMPACTNESS,
     QUADRAS_MIN_ROTATED_RECTANGLE,
     QUADRAS_FACE_LENGTH_SCORE,
+    QUADRAS_ORIENTATION,
     ROAD_TOTAL_LENGTH,
     ROAD_EXISTING_LENGTH,
     ROAD_PROPOSED_LENGTH,
@@ -420,11 +493,16 @@ ALL_DEFINITIONS: tuple[IndicatorDefinition, ...] = (
     ROAD_INTERSECTION_DENSITY,
     ROAD_LINK_NODE_RATIO,
     ROAD_PROPOSED_CONNECTION_COUNT,
+    ROAD_MAX_BOUNDARY_GAP,
     DENSITY_MAX_COMPUTABLE_AREA,
     DENSITY_LOT_COUNT_WITH_CA,
     DENSITY_CA_COVERAGE,
+    DENSITY_BUILT_OPEN_RATIO,
+    DENSITY_NON_RESIDENTIAL_CA,
     LOTS_FRONTAGE_LENGTH,
     LOTS_PARCELING_EFFICIENCY,
+    LOTS_DISTANCE_TO_NON_RESIDENTIAL_USE,
+    LOTS_DISTANCE_TO_GREEN_AREA,
 )
 
 
