@@ -100,3 +100,19 @@ class IndicatorRepository:
             .all()
         )
         return tuple(_to_calculation(row) for row in rows)
+
+    def by_run(self, run_id: uuid.UUID) -> tuple[IndicatorCalculation, ...]:
+        """Results for one specific run, regardless of status or recency.
+
+        Ownership of *run_id* by a project is the caller's responsibility
+        (`AnalysisRepository.get_run_for_project`, already used by
+        `GET /runs/{run_id}`) - this method trusts the run id it is given,
+        same split of responsibility as that sibling endpoint.
+        """
+        rows = (
+            self._session.query(IndicatorResult)
+            .filter(IndicatorResult.analysis_run_id == run_id)
+            .order_by(IndicatorResult.indicator_code)
+            .all()
+        )
+        return tuple(_to_calculation(row) for row in rows)

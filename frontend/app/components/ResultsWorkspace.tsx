@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 
 import type { CatalogIndicator } from "../features/catalog/api/listCatalogIndicators";
+import { useRunResults } from "../features/results/hooks/useRunResults";
 import type { AnalysisRun } from "../features/results/api/listProjectRuns";
 import type { IndicatorResult } from "../features/results/api/listProjectResults";
 import {
@@ -27,6 +28,7 @@ import type { SelectedFeature } from "../store/useWorkspaceStore";
 import MapCanvas from "./MapCanvas";
 
 interface ResultsWorkspaceProps {
+  projectId: string | null;
   versionLabel: string;
   layers: LayerStyleConfig[];
   catalog: CatalogIndicator[];
@@ -45,6 +47,7 @@ interface ResultsWorkspaceProps {
 }
 
 export default function ResultsWorkspace({
+  projectId,
   versionLabel,
   layers,
   catalog,
@@ -68,16 +71,38 @@ export default function ResultsWorkspace({
     () => buildResultIndicatorViews(catalog, results),
     [catalog, results],
   );
-  // Métricas internas (ex.: quadras.face_length_score) continuam no
-  // catálogo e alimentam o resumo de avisos, mas não viram opção de
-  // navegação - nota Obsidian 88/97.
-  const selectableViews = useMemo(() => views.filter((view) => !view.internal), [views]);
   const latestCompletedRun = runs.find((run) => run.status === "completed") ?? null;
   const selectedRun = runs.find((run) => run.id === selectedRunId)
     ?? latestCompletedRun
     ?? runs[0]
     ?? null;
   const isLatestCompleted = Boolean(selectedRun && selectedRun.id === latestCompletedRun?.id);
+  // Uma execução histórica concluída tem valores de verdade a buscar
+  // (nota Obsidian 87/97 item 2) - uma histórica falha/pendente não tem o
+  // que buscar, só metadados (`HistoricalRun` abaixo).
+  const needsHistoricalResults = Boolean(
+    selectedRun && !isLatestCompleted && selectedRun.status === "completed",
+  );
+  const historicalResults = useRunResults(
+    projectId,
+    needsHistoricalResults ? selectedRun!.id : null,
+  );
+  const historicalViews = useMemo(
+    () => buildResultIndicatorViews(catalog, historicalResults.data ?? []),
+    [catalog, historicalResults.data],
+  );
+  // Tudo abaixo lê de `activeViews` em vez de `views` diretamente, para
+  // que navegar para uma execução histórica troque o conjunto de dados
+  // inteiro (contagens, avisos, seletor de indicador) sem duplicar essa
+  // lógica para os dois casos.
+  const activeViews = needsHistoricalResults ? historicalViews : views;
+  // Métricas internas (ex.: quadras.face_length_score) continuam no
+  // catálogo e alimentam o resumo de avisos, mas não viram opção de
+  // navegação - nota Obsidian 88/97.
+  const selectableViews = useMemo(
+    () => activeViews.filter((view) => !view.internal),
+    [activeViews],
+  );
   const filteredViews = selectedTheme === "all"
     ? selectableViews
     : selectableViews.filter((view) => view.theme === selectedTheme);
@@ -85,14 +110,15 @@ export default function ResultsWorkspace({
     ?? filteredViews[0]
     ?? null;
   const themes = Array.from(new Set(selectableViews.map((view) => view.theme)));
-  const warningCount = results.reduce((total, result) => total + result.warnings.length, 0);
-  // A partir de `views` (não `selectableViews`): o aviso de um indicador
-  // interno (ex.: block_face_out_of_compliance em quadras.face_length_score)
-  // precisa continuar visível mesmo que o indicador não seja mais
-  // selecionável - nota Obsidian 88/97.
+  const activeResults = needsHistoricalResults ? (historicalResults.data ?? []) : results;
+  const warningCount = activeResults.reduce((total, result) => total + result.warnings.length, 0);
+  // A partir de `activeViews` (não `selectableViews`): o aviso de um
+  // indicador interno (ex.: block_face_out_of_compliance em
+  // quadras.face_length_score) precisa continuar visível mesmo que o
+  // indicador não seja mais selecionável - nota Obsidian 88/97.
   const allWarnings = useMemo(
-    () => views.flatMap((view) => view.warnings.map((warning) => ({ view, warning }))),
-    [views],
+    () => activeViews.flatMap((view) => view.warnings.map((warning) => ({ view, warning }))),
+    [activeViews],
   );
   const isLoading = catalogLoading || resultsLoading || runsLoading;
 
@@ -105,7 +131,11 @@ export default function ResultsWorkspace({
           <p>Explore os indicadores calculados para {versionLabel}, sem interpretação qualitativa automática.</p>
         </div>
         <div className="results-header-actions">
-          <span className="results-contract-note">Resultados da execução concluída mais recente</span>
+          <span className="results-contract-note">
+            {needsHistoricalResults
+              ? `Resultados históricos de ${selectedRun ? formatRunDate(selectedRun.run_at) : ""}`
+              : "Resultados da execução concluída mais recente"}
+          </span>
           <button className="secondary-button" onClick={onRefresh}>Atualizar resultados</button>
         </div>
       </header>
@@ -225,9 +255,17 @@ export default function ResultsWorkspace({
               <span>{resultsError.message}</span>
               <button className="secondary-button" onClick={onRefresh}>Tentar novamente</button>
             </div>
-          ) : selectedRun && !isLatestCompleted ? (
-            <HistoricalRun run={selectedRun} latestCompletedRun={latestCompletedRun} />
-          ) : views.length === 0 ? (
+          ) : selectedRun && !isLatestCompleted && selectedRun.status !== "completed" ? (
+            <HistoricalRun run={selectedRun} />
+          ) : needsHistoricalResults && historicalResults.isLoading ? (
+            <div className="integration-state" role="status">Consultando execução histórica…</div>
+          ) : needsHistoricalResults && historicalResults.error ? (
+            <div className="integration-state error" role="alert">
+              <strong>Não foi possível carregar os resultados desta execução.</strong>
+              <span>{historicalResults.error.message}</span>
+              <button className="secondary-button" onClick={() => historicalResults.refetch()}>Tentar novamente</button>
+            </div>
+          ) : activeViews.length === 0 ? (
             <div className="integration-state empty results-empty-state">
               <strong>A versão ativa ainda não possui resultados concluídos.</strong>
               <span>Execute um diagnóstico para gerar indicadores rastreáveis.</span>
@@ -497,13 +535,7 @@ function ResultExplorer({
   );
 }
 
-function HistoricalRun({
-  run,
-  latestCompletedRun,
-}: {
-  run: AnalysisRun;
-  latestCompletedRun: AnalysisRun | null;
-}) {
+function HistoricalRun({ run }: { run: AnalysisRun }) {
   const themes = runThemes(run);
   return (
     <article className="historical-run panel-surface">
@@ -529,12 +561,6 @@ function HistoricalRun({
         <section className="historical-error" role="alert">
           <span className="eyebrow">Falha registrada</span>
           <strong>{structuredErrorMessage(run.error)}</strong>
-        </section>
-      )}
-      {run.status === "completed" && run.id !== latestCompletedRun?.id && (
-        <section className="historical-contract-note">
-          <strong>Valores históricos ainda não estão disponíveis neste contrato.</strong>
-          <p>A API atual retorna valores somente para a execução concluída mais recente. Esta execução permanece consultável por seus metadados e rastreabilidade.</p>
         </section>
       )}
     </article>

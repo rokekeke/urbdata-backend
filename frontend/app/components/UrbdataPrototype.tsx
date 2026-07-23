@@ -414,6 +414,7 @@ export default function UrbdataPrototype() {
           />
         ) : activeSection === "resultados" ? (
           <ResultsWorkspace
+            projectId={workspace.activeProjectId}
             versionLabel={workspace.activeVersion ? `a versão ${workspace.activeVersion.number}` : "a versão ativa"}
             layers={layers}
             catalog={workspace.catalog.data ?? []}

@@ -272,6 +272,96 @@ def test_versions_runs_and_error_shape_round_trip() -> None:
         assert cross_detail["error"] == "analysis_run_not_found"
         assert set(cross_detail) == {"error", "message", "context"}
 
+
+def test_run_results_are_scoped_to_the_requested_run_not_the_latest() -> None:
+    """Nota Obsidian 87/97 item 2: GET /results only ever returns the
+    latest completed run - this closes the gap of consulting a specific
+    historical run's results, without changing that existing contract."""
+    with TestClient(create_app()) as client:
+        project_id = str(
+            client.post("/v1/projects", json={"name": "Historico de execucoes"}).json()["id"]
+        )
+        _upload(
+            client,
+            project_id,
+            layer_type="perimetro",
+            features=[
+                _feature(
+                    "Polygon",
+                    [[
+                        [-52.001, -27.001],
+                        [-51.999, -27.001],
+                        [-51.999, -26.999],
+                        [-52.001, -26.999],
+                        [-52.001, -27.001],
+                    ]],
+                )
+            ],
+        )
+        territorio_id = _upload(
+            client,
+            project_id,
+            layer_type="territorio",
+            features=[
+                _feature(
+                    "Polygon",
+                    [[
+                        [-52.0008, -27.0008],
+                        [-51.9992, -27.0008],
+                        [-51.9992, -26.9992],
+                        [-52.0008, -26.9992],
+                        [-52.0008, -27.0008],
+                    ]],
+                    macro="Lote",
+                    uso="Residencial",
+                )
+            ],
+        )
+        _map_attributes(
+            client, project_id, territorio_id, {"macroarea": "macro", "land_use": "uso"}
+        )
+
+        # Two runs requesting disjoint theme sets - if run scoping works,
+        # each run's results must contain only its own theme's codes, and
+        # `/results` (latest) must reflect only the second run.
+        first_run = client.post(
+            f"/v1/projects/{project_id}/analyze", json={"themes": ["territorial"]}
+        )
+        assert first_run.status_code == 201, first_run.text
+        first_run_id = first_run.json()["analysis_run_id"]
+
+        second_run = client.post(
+            f"/v1/projects/{project_id}/analyze", json={"themes": ["land_use"]}
+        )
+        assert second_run.status_code == 201, second_run.text
+        second_run_id = second_run.json()["analysis_run_id"]
+        assert second_run_id != first_run_id
+
+        first_run_results = client.get(f"/v1/projects/{project_id}/runs/{first_run_id}/results")
+        assert first_run_results.status_code == 200, first_run_results.text
+        first_codes = {row["indicator_code"] for row in first_run_results.json()}
+        assert first_codes
+        assert all(code.startswith("territorial.") for code in first_codes)
+
+        second_run_results = client.get(
+            f"/v1/projects/{project_id}/runs/{second_run_id}/results"
+        )
+        assert second_run_results.status_code == 200, second_run_results.text
+        second_codes = {row["indicator_code"] for row in second_run_results.json()}
+        assert second_codes
+        assert all(code.startswith("land_use.") for code in second_codes)
+
+        latest = client.get(f"/v1/projects/{project_id}/results")
+        assert latest.status_code == 200, latest.text
+        assert {row["indicator_code"] for row in latest.json()} == second_codes
+
+        other_project_id = str(
+            client.post("/v1/projects", json={"name": "Outro projeto"}).json()["id"]
+        )
+        cross = client.get(f"/v1/projects/{other_project_id}/runs/{first_run_id}/results")
+        assert cross.status_code == 404
+        assert cross.json()["detail"]["error"] == "analysis_run_not_found"
+
         missing = client.get("/v1/projects/00000000-0000-0000-0000-000000000000")
         assert missing.status_code == 404
         missing_detail = missing.json()["detail"]
