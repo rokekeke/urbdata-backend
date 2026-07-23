@@ -19,6 +19,7 @@ function indicator(theme: string, requiredLayers: string[]): CatalogIndicator {
     value_shape: "scalar",
     category_feature_property: null,
     feature_key: null,
+    internal: false,
     required_layers: requiredLayers,
     optional_layers: [],
   };

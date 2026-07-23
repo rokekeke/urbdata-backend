@@ -1876,6 +1876,10 @@
             ],
             "title": "Category Feature Property"
           },
+          "internal": {
+            "type": "boolean",
+            "title": "Internal"
+          },
           "required_layers": {
             "items": {
               "type": "string"
@@ -1903,6 +1907,7 @@
           "feature_key",
           "value_shape",
           "category_feature_property",
+          "internal",
           "required_layers",
           "optional_layers"
         ],

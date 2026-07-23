@@ -34,6 +34,7 @@ function catalogIndicator(
     value_shape: "scalar",
     category_feature_property: null,
     feature_key: null,
+    internal: false,
     required_layers: ["territorio"],
     optional_layers: [],
     ...options,

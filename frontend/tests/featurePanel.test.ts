@@ -31,6 +31,7 @@ function indicator(
     value_shape: granularity === "por_feicao" ? "feature_series" : "scalar",
     category_feature_property: null,
     feature_key: featureKey,
+    internal: false,
     required_layers: ["territorio"],
     optional_layers: [],
   };

@@ -515,6 +515,8 @@ export interface components {
             value_shape: components["schemas"]["ValueShape"];
             /** Category Feature Property */
             category_feature_property: string | null;
+            /** Internal */
+            internal: boolean;
             /** Required Layers */
             required_layers: string[];
             /** Optional Layers */
