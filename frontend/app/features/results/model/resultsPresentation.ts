@@ -16,6 +16,7 @@ export interface ResultIndicatorView {
   valueShape: CatalogIndicator["value_shape"];
   categoryFeatureProperty: CatalogIndicator["category_feature_property"];
   featureKey: CatalogIndicator["feature_key"];
+  internal: boolean;
   requiredLayers: string[];
   rawValue: IndicatorResult["value"];
   valueKind: ResultValueKind;
@@ -172,6 +173,7 @@ export function buildResultIndicatorViews(
         valueShape: indicator.value_shape,
         categoryFeatureProperty: indicator.category_feature_property,
         featureKey: indicator.feature_key,
+        internal: indicator.internal,
         requiredLayers: indicator.required_layers,
         rawValue: result.value,
         valueKind,
@@ -191,6 +193,48 @@ export function buildResultIndicatorViews(
       left.themeLabel.localeCompare(right.themeLabel, "pt-BR")
       || left.displayName.localeCompare(right.displayName, "pt-BR"),
     );
+}
+
+// Pares aditivos aprovados na revisão teórica (notas Obsidian 66/67):
+// AVL-only e AVL+APP continuam como indicadores independentes no
+// catálogo, mas devem ser lidos juntos - nunca como dois números soltos
+// (nota 88 §1.1).
+const GREEN_AREA_PAIRS: Record<string, string> = {
+  "green_areas.total_area": "green_areas.total_area_with_app",
+  "green_areas.total_area_with_app": "green_areas.total_area",
+  "green_areas.percent_of_project": "green_areas.percent_of_project_with_app",
+  "green_areas.percent_of_project_with_app": "green_areas.percent_of_project",
+};
+
+export interface GreenAreaPairView {
+  avlOnly: ResultIndicatorView;
+  withApp: ResultIndicatorView;
+  avlOnlyValue: number;
+  withAppValue: number;
+  deltaFormatted: string;
+}
+
+export function findGreenAreaPair(
+  view: ResultIndicatorView,
+  views: ResultIndicatorView[],
+): GreenAreaPairView | null {
+  const pairCode = GREEN_AREA_PAIRS[view.code];
+  if (!pairCode) return null;
+  const pairView = views.find((candidate) => candidate.code === pairCode);
+  if (!pairView) return null;
+
+  const isWithApp = view.code.endsWith("_with_app");
+  const avlOnly = isWithApp ? pairView : view;
+  const withApp = isWithApp ? view : pairView;
+  if (typeof avlOnly.rawValue !== "number" || typeof withApp.rawValue !== "number") return null;
+
+  return {
+    avlOnly,
+    withApp,
+    avlOnlyValue: avlOnly.rawValue,
+    withAppValue: withApp.rawValue,
+    deltaFormatted: formatScalarValue(withApp.rawValue - avlOnly.rawValue, view.unit),
+  };
 }
 
 export function buildDistributionEntries(view: ResultIndicatorView): ResultDistributionEntry[] {

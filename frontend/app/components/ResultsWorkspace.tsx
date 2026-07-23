@@ -11,6 +11,7 @@ import {
   buildDistributionEntries,
   buildResultIndicatorViews,
   buildResultOverlay,
+  findGreenAreaPair,
   formatDuration,
   formatRunDate,
   formatScalarValue,
@@ -67,6 +68,10 @@ export default function ResultsWorkspace({
     () => buildResultIndicatorViews(catalog, results),
     [catalog, results],
   );
+  // Métricas internas (ex.: quadras.face_length_score) continuam no
+  // catálogo e alimentam o resumo de avisos, mas não viram opção de
+  // navegação - nota Obsidian 88/97.
+  const selectableViews = useMemo(() => views.filter((view) => !view.internal), [views]);
   const latestCompletedRun = runs.find((run) => run.status === "completed") ?? null;
   const selectedRun = runs.find((run) => run.id === selectedRunId)
     ?? latestCompletedRun
@@ -74,13 +79,21 @@ export default function ResultsWorkspace({
     ?? null;
   const isLatestCompleted = Boolean(selectedRun && selectedRun.id === latestCompletedRun?.id);
   const filteredViews = selectedTheme === "all"
-    ? views
-    : views.filter((view) => view.theme === selectedTheme);
+    ? selectableViews
+    : selectableViews.filter((view) => view.theme === selectedTheme);
   const selectedView = filteredViews.find((view) => view.code === selectedIndicatorCode)
     ?? filteredViews[0]
     ?? null;
-  const themes = Array.from(new Set(views.map((view) => view.theme)));
+  const themes = Array.from(new Set(selectableViews.map((view) => view.theme)));
   const warningCount = results.reduce((total, result) => total + result.warnings.length, 0);
+  // A partir de `views` (não `selectableViews`): o aviso de um indicador
+  // interno (ex.: block_face_out_of_compliance em quadras.face_length_score)
+  // precisa continuar visível mesmo que o indicador não seja mais
+  // selecionável - nota Obsidian 88/97.
+  const allWarnings = useMemo(
+    () => views.flatMap((view) => view.warnings.map((warning) => ({ view, warning }))),
+    [views],
+  );
   const isLoading = catalogLoading || resultsLoading || runsLoading;
 
   return (
@@ -105,9 +118,9 @@ export default function ResultsWorkspace({
       )}
 
       <section className="results-summary" aria-label="Resumo dos resultados">
-        <article><span>Indicadores calculados</span><strong>{resultsLoading ? "—" : views.length}</strong><small>{themes.length} temas com resultado</small></article>
+        <article><span>Indicadores calculados</span><strong>{resultsLoading ? "—" : selectableViews.length}</strong><small>{themes.length} temas com resultado</small></article>
         <article><span>Execução de referência</span><strong>{latestCompletedRun ? formatRunDate(latestCompletedRun.run_at) : "Não disponível"}</strong><small>{latestCompletedRun ? formatDuration(latestCompletedRun.duration_ms) : "Nenhuma execução concluída"}</small></article>
-        <article><span>Avisos do cálculo</span><strong>{resultsLoading ? "—" : warningCount}</strong><small>{warningCount ? "Consultar por indicador" : "Nenhum aviso retornado"}</small></article>
+        <article><span>Avisos do cálculo</span><strong>{resultsLoading ? "—" : warningCount}</strong><small>{warningCount ? "Ver lista em Avisos" : "Nenhum aviso retornado"}</small></article>
       </section>
 
       <div className="results-layout">
@@ -150,17 +163,50 @@ export default function ResultsWorkspace({
             </div>
             <div className="result-theme-list">
               <button className={selectedTheme === "all" ? "active" : ""} onClick={() => setSelectedTheme("all")}>
-                <span>Todos os temas</span><b>{views.length}</b>
+                <span>Todos os temas</span><b>{selectableViews.length}</b>
               </button>
               {themes.map((theme) => {
-                const label = views.find((view) => view.theme === theme)?.themeLabel ?? theme;
+                const label = selectableViews.find((view) => view.theme === theme)?.themeLabel ?? theme;
                 return (
                   <button key={theme} className={selectedTheme === theme ? "active" : ""} onClick={() => setSelectedTheme(theme)}>
-                    <span>{label}</span><b>{views.filter((view) => view.theme === theme).length}</b>
+                    <span>{label}</span><b>{selectableViews.filter((view) => view.theme === theme).length}</b>
                   </button>
                 );
               })}
             </div>
+          </div>
+
+          <div className="results-sidebar-section">
+            <div className="panel-heading">
+              <div><span className="eyebrow">Qualidade</span><h2>Avisos</h2></div>
+              <span className="panel-count">{allWarnings.length}</span>
+            </div>
+            {allWarnings.length === 0 ? (
+              <p className="results-sidebar-state">Nenhum aviso retornado nesta execução.</p>
+            ) : (
+              <div className="result-warning-summary-list">
+                {allWarnings.map(({ view, warning }, index) => {
+                  const isSelectable = selectableViews.some((candidate) => candidate.code === view.code);
+                  return (
+                    <button
+                      key={`${view.code}-${warning.code}-${index}`}
+                      disabled={!isSelectable}
+                      title={isSelectable ? `Ver em ${view.displayName}` : view.displayName}
+                      onClick={() => {
+                        setSelectedTheme(view.theme);
+                        setSelectedIndicatorCode(view.code);
+                      }}
+                    >
+                      <span className={`result-warning-dot ${warning.severity}`} />
+                      <span>
+                        <strong>{warning.message}</strong>
+                        <small>{view.displayName}</small>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </aside>
 
@@ -220,6 +266,7 @@ function ResultExplorer({
 }) {
   const distribution = useMemo(() => buildDistributionEntries(view), [view]);
   const summary = useMemo(() => numericDistributionSummary(distribution), [distribution]);
+  const greenAreaPair = useMemo(() => findGreenAreaPair(view, views), [view, views]);
   const categoryShares = useMemo(
     () => (view.valueShape === "category_breakdown" ? buildCategoryShares(view) : []),
     [view],
@@ -261,6 +308,14 @@ function ResultExplorer({
           <strong>{view.formattedValue}</strong>
         </div>
       </header>
+
+      {greenAreaPair && (
+        <section className="result-green-area-pair" aria-label="Comparação AVL e AVL+APP">
+          <div><span>AVL</span><strong>{formatScalarValue(greenAreaPair.avlOnlyValue, view.unit)}</strong></div>
+          <div><span>AVL+APP</span><strong>{formatScalarValue(greenAreaPair.withAppValue, view.unit)}</strong></div>
+          <div className="result-green-area-delta"><span>Ganho com a APP</span><strong>+{greenAreaPair.deltaFormatted}</strong></div>
+        </section>
+      )}
 
       <div className="result-map-and-context">
         <section className="result-map-card" aria-label="Contexto territorial do indicador">

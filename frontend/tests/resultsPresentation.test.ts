@@ -9,6 +9,7 @@ import {
   buildDistributionEntries,
   buildResultIndicatorViews,
   buildResultOverlay,
+  findGreenAreaPair,
   formatDuration,
   formatScalarValue,
   normalizeCategoryKey,
@@ -255,5 +256,60 @@ describe("resultsPresentation", () => {
     expect(runStatusLabel(run.status)).toBe("Falhou");
     expect(runThemes(run)).toEqual(["Território", "Sistema viário"]);
     expect(formatDuration(run.duration_ms)).toBe("2,3 s");
+  });
+
+  it("propaga o campo internal do catálogo para a view (nota 88/97)", () => {
+    const views = buildResultIndicatorViews(
+      [
+        catalogIndicator("quadras.face_length_score", { internal: true }),
+        catalogIndicator("territorial.total_area", { internal: false }),
+      ],
+      [
+        result("quadras.face_length_score", 0.8, "score"),
+        result("territorial.total_area", 12000, "m2"),
+      ],
+    );
+
+    expect(views.find((view) => view.code === "quadras.face_length_score")?.internal).toBe(true);
+    expect(views.find((view) => view.code === "territorial.total_area")?.internal).toBe(false);
+  });
+
+  it("encontra o par AVL/AVL+APP e calcula o ganho, em qualquer direção", () => {
+    const views = buildResultIndicatorViews(
+      [
+        catalogIndicator("green_areas.total_area", { theme: "green_areas", unit: "m2" }),
+        catalogIndicator("green_areas.total_area_with_app", { theme: "green_areas", unit: "m2" }),
+      ],
+      [
+        result("green_areas.total_area", 300, "m2"),
+        result("green_areas.total_area_with_app", 784, "m2"),
+      ],
+    );
+    const avlOnly = views.find((view) => view.code === "green_areas.total_area")!;
+    const withApp = views.find((view) => view.code === "green_areas.total_area_with_app")!;
+
+    const fromAvlOnly = findGreenAreaPair(avlOnly, views);
+    const fromWithApp = findGreenAreaPair(withApp, views);
+
+    expect(fromAvlOnly).toMatchObject({ avlOnlyValue: 300, withAppValue: 784, deltaFormatted: "484 m²" });
+    expect(fromWithApp).toMatchObject({ avlOnlyValue: 300, withAppValue: 784, deltaFormatted: "484 m²" });
+  });
+
+  it("não forma par de área verde sem o parceiro na lista de views", () => {
+    const views = buildResultIndicatorViews(
+      [catalogIndicator("green_areas.total_area", { theme: "green_areas", unit: "m2" })],
+      [result("green_areas.total_area", 300, "m2")],
+    );
+
+    expect(findGreenAreaPair(views[0], views)).toBeNull();
+  });
+
+  it("não forma par de área verde para indicadores fora da lista aditiva", () => {
+    const views = buildResultIndicatorViews(
+      [catalogIndicator("territorial.total_area")],
+      [result("territorial.total_area", 12000, "m2")],
+    );
+
+    expect(findGreenAreaPair(views[0], views)).toBeNull();
   });
 });
