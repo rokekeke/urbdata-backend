@@ -1,0 +1,2 @@
+# Generated OpenAPI types are compared byte-for-byte by `pnpm api:check`.
+/frontend/app/lib/api/schema.d.ts text eol=lf

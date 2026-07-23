@@ -1,9 +1,26 @@
-# URBDATA Backend
+# URBDATA
 
-Monolito modular para upload de dados geoespaciais e calculo rastreavel de
-indicadores territoriais, de uso do solo, areas verdes, quadras e rede viaria.
+Plataforma para upload de dados geoespaciais, composição cartográfica e cálculo
+rastreável de indicadores territoriais, de uso do solo, áreas verdes, quadras e
+rede viária.
 
-## Inicio rapido
+## Estrutura do repositório
+
+```text
+app/                  API e domínio FastAPI
+tests/                testes do backend
+migrations/           migrações PostgreSQL/PostGIS
+frontend/             interface web URBDATA
+docs/                 ADRs e documentação técnica compartilhada
+.github/workflows/    validações independentes de backend e frontend
+```
+
+O backend permanece na raiz para evitar uma reorganização ampla durante o
+desenvolvimento do CRUD de `MapDocument`. O frontend foi incorporado em
+`frontend/` com seu histórico preservado. Consulte
+[a decisão de migração](docs/frontend/monorepo-migration.md).
+
+## Início rápido do backend
 
 ```bash
 python -m venv .venv
@@ -11,6 +28,20 @@ pip install -e ".[dev]"
 pytest
 uvicorn app.main:app --reload
 ```
+
+## Início rápido do frontend
+
+Com a API disponível em `http://localhost:8000`:
+
+```bash
+cd frontend
+pnpm install --frozen-lockfile
+cp .env.example .env.local
+pnpm dev
+```
+
+No Windows/PowerShell, substitua a criação do arquivo de ambiente por
+`Copy-Item .env.example .env.local`.
 
 O motor seleciona um CRS metrico por projeto, executa os temas pelo catalogo de
 indicadores e registra formula, parametros, camadas, feicoes contribuintes e avisos.
